@@ -1,0 +1,8 @@
+# File konfigurasi dummy properties file untuk memberikan contoh kepada Nadia
+spring:
+  application:
+    name: capstone-backend
+  datasource:
+    url: jdbc:postgresql://localhost:5432/bank_db
+    username: user
+    password: password

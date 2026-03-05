@@ -1,0 +1,115 @@
+version: '3.8'
+
+# YAML anchor untuk membatasi ukuran log agar disk tidak cepat penuh
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: bank_db
+    networks:
+      - data-net
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database-init:/docker-entrypoint-initdb.d
+    cap_add:
+      - NET_ADMIN # Memungkinkan simulasi network delay dengan tc netem di kemudian hari
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  redis-cache:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    networks:
+      - data-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  backend-api:
+    build:
+      context: ./backend-api
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment: # Menambahkan default environment supaya API dapat terhubung ke kontainer lain
+      - SPRING_PROFILES_ACTIVE=${APP_PROFILE:-production}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/bank_db
+      - SPRING_DATASOURCE_USERNAME=user
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_REDIS_HOST=redis-cache
+      - SPRING_REDIS_PORT=6379
+    networks:
+      - api-net
+      - data-net
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1.5G
+    logging: *default-logging
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - api-net
+    logging: *default-logging
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - api-net
+    logging: *default-logging
+
+  k6-loadtester:
+    image: grafana/k6:latest
+    # Profile "testing" memastikan container ini hanya jalan jika dipanggil spesifik, 
+    # contoh: docker-compose --profile testing up k6-loadtester
+    profiles: ["testing"]
+    volumes:
+      - ./k6-scripts:/scripts
+    networks:
+      - api-net
+    logging: *default-logging
+
+networks:
+  api-net:
+    driver: bridge
+  data-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:

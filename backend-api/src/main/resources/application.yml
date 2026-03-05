@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: capstone-backend
+  datasource:
+    # URL menggunakan hostname container db
+    url: jdbc:postgresql://postgres-db:5432/bank_db
+    username: user
+    password: password
+  data:
+    redis:
+      host: redis-cache
+      port: 6379
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: always
