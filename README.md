@@ -86,4 +86,36 @@ Saat ini, *Boilerplate* infrastruktur sudah menyala sempurna menggunakan kontain
   - Sambungkan *Data Source* ke Prometheus (`http://prometheus:9090`).
   - Buat *Dashboard* kustomisasi untuk memantau metrik dari Spring Boot Actuator, JVM memory, dan Database connection pool.
 
+
+# ⚠️ SOP PENGGUNAAN REPOSITORI GITHUB KELOMPOK 6 (WAJIB DIBACA & DIPATUHI) ⚠️
+
+Repositori ini menggunakan arsitektur *container* (Docker Compose) yang saling terhubung. Agar infrastruktur tidak hancur atau *error* saat disatukan, seluruh anggota tim **WAJIB** mematuhi 4 aturan emas berikut:
+
+### 1. DILARANG KERAS PUSH LANGSUNG KE BRANCH `main`
+Branch `main` adalah **lingkungan produksi/stabil** yang harus selalu bisa dijalankan kapan saja. Tidak ada satu pun anggota yang diizinkan melakukan `git commit` atau `git push` langsung ke branch `main`.
+
+### 2. WAJIB BEKERJA DI BRANCH MASING-MASING
+Sebelum mulai menulis kode, kalian **wajib** menarik data terbaru dari `main` dan membuat *branch* baru dengan format `fitur/nama-tugas`.
+* Perintah: `git pull origin main` lalu `git checkout -b fitur/nama-tugas kalian`
+* Contoh Nadia: `git checkout -b feature/api-spring-boot`
+* Contoh Seva: `git checkout -b feature/db-schema`
+* Contoh Rafael: `git checkout -b testing/k6-load-test`
+
+### 3. PATUHI BATASAN RUANG KERJA (FOLDER)
+Kerjakan tugas kalian **HANYA** di dalam direktori yang sudah disediakan sesuai pembagian *role*. Dilarang keras mengedit *file* di luar *folder* kalian untuk mencegah konflik.
+* **Nadia (Backend):** Hanya bekerja di folder `backend-api/`
+* **Seva (Data Engineer):** Hanya bekerja di folder `database-init/`
+* **Rafael (Load Tester):** Hanya bekerja di folder `k6-scripts/`
+* **Ego & Vanessa (Monitoring):** Hanya bekerja di folder `monitoring/`
+* ⛔ **DILARANG KERAS** menyentuh, mengedit, atau memindahkan file `docker-compose.yml` tanpa persetujuan **Furqon (DevOps/Infrastructure)**.
+
+### 4. ALUR PENGUMPULAN KODE (PULL REQUEST)
+Jika kode di *branch* kalian sudah selesai dan sukses dijalankan di komputer masing-masing, ikuti alur penyatuan kode berikut:
+1. *Push* kode ke *branch* kalian sendiri (`git push origin nama-branch-kalian`).
+2. Buka halaman GitHub dan buat **Pull Request (PR)** dari *branch* kalian ke arah `main`.
+3. Beri tahu Furqon di grup WhatsApp bahwa PR sudah dibuat.
+4. **Furqon (sebagai Gatekeeper)** akan melakukan *review* terhadap PR tersebut. Jika aman dan tidak merusak infrastruktur Docker, Furqon yang akan melakukan **Merge**.
+
+**Catatan Tegas:** Jika ada kode yang merusak struktur Docker Compose atau melanggar SOP ini, Pull Request akan langsung di-*reject* dan dikembalikan untuk diperbaiki.
+
 > **Status Saat Ini (DevOps)**: Infrastruktur Docker Compose telah stabil dan siap digunakan pengembangan paralel. Jika ada *request* penambahan *Environment Variable* atau *Dependency* spesifik pada Docker, silakan koordinasikan ke tim *Infra/DevOps*. Kodingan kalian ditunggu! 🚀
