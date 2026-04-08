@@ -18,6 +18,7 @@ capstone-backend-b4/
 └── monitoring/                  <-- (Wilayah Ego & Vaness## 🚀 Panduan Deployment (Sistem 3-Tier Workflow)
 
 Bagian ini berisi langkah-langkah presisi tinggi untuk menjalankan, mengelola, dan mematikan environment arsitektur Master-Replica perbankan Anda secara terstruktur. Pastikan Anda sudah menginstall Docker Desktop.
+```
 
 ### TIER 1: Model Development Murni / IDE 💻
 Di mode ini, *developer* (Backend Java/Go) men-debug kodingannya langsung melalui jendela *Run Button* IDE favorit (VSCode/IntelliJ) tanpa melempar Node API ke dalam Docker, namun mendelegasikan beban *databasenya* ke kontainer lokal.
