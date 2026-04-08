@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"log"
+	"os"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -11,11 +13,18 @@ import (
 var DB *gorm.DB
 
 func ConnectDatabase() {
-    // Karena Go menggunakan format DSN bawaan Postgres (bukan JDBC seperti Java),
-    // kita sesuaikan formatnya di sini. Anggap ini membaca dari .env Anda.
-    
-	masterDSN := "host=host.docker.internal user=postgres password=purqon dbname=capstonev2 port=5432 sslmode=disable"
-	replicaDSN := "host=host.docker.internal user=postgres password=purqon dbname=capstonev2 port=5432 sslmode=disable"
+	masterHost := os.Getenv("DB_MASTER_HOST")
+	if masterHost == "" { masterHost = "127.0.0.1" }
+	masterPort := os.Getenv("DB_MASTER_PORT")
+	if masterPort == "" { masterPort = "15432" }
+	
+	replicaHost := os.Getenv("DB_REPLICA_HOST")
+	if replicaHost == "" { replicaHost = "127.0.0.1" }
+	replicaPort := os.Getenv("DB_REPLICA_PORT")
+	if replicaPort == "" { replicaPort = "15433" }
+
+	masterDSN := fmt.Sprintf("host=%s user=user password=password dbname=capstonev2 port=%s sslmode=disable", masterHost, masterPort)
+	replicaDSN := fmt.Sprintf("host=%s user=user password=password dbname=capstonev2 port=%s sslmode=disable", replicaHost, replicaPort)
 
 	var err error
 

@@ -20,14 +20,20 @@ capstone-backend-b4/
 Bagian ini berisi langkah-langkah presisi tinggi untuk menjalankan, mengelola, dan mematikan environment arsitektur Master-Replica perbankan Anda secara terstruktur. Pastikan Anda sudah menginstall Docker Desktop.
 ```
 
-### TIER 1: Model Development Murni / IDE 💻
-Di mode ini, *developer* (Backend Java/Go) men-debug kodingannya langsung melalui jendela *Run Button* IDE favorit (VSCode/IntelliJ) tanpa melempar Node API ke dalam Docker, namun mendelegasikan beban *databasenya* ke kontainer lokal.
-1. Salin draf `.env.development.template` menjadi sebuah file utuh bernama `.env`.
-2. Anda akan mendapati letak koneksi *Master* terkunci di `localhost:5432` dan *Replica* di `localhost:5433` pada laptop Anda.
-3. Pancing mesin databasenya secara independen dengan eksekusi:
-   ```bash
-   docker-compose up -d postgres-master postgres-replica redis-cache
+### TIER 1: Native Local Development (Hot-Reload Mode)
+Pada mode ini, *source code* (Golang) dieksekusi secara *native* pada Host OS untuk memfasilitasi proses *debugging* dan *hot-reloading* yang instan tanpa *overhead* proses *build* internal Docker. Klaster kontainer hanya dialokasikan untuk menyediakan dependensi persisten infrastruktur data (PostgreSQL Master, PostgreSQL Replica, dan Redis).
+
+1. **Automated Bootstrapping (Recommended)**:
+   Gunakan *batch script* otomatis yang telah disediakan untuk memicu proses agregasi *stateful containers* secara *detached* (latar belakang), yang kemudian diikuti dengan inisialisasi server kompilasi JIT (*Just-In-Time*) Golang pada terminal utama (*foreground*):
+   ```cmd
+   .\run-dev.bat
    ```
+   *(Catatan Arsitektur: Repositori dikonfigurasi menyerupai pola monolitik dengan fitur workspace `go.work`. Meskipun kode secara logis diisolasi ke dalam sub-direktori `backend-api/`, kompilasi dapat dieksekusi langsung dari *root directory* tanpa konflik routing).*
+
+2. **Manual Execution (Alternative)**:
+   - Salin file `.env.development.template` menjadi sebuah file konfigurasi `.env`.
+   - Inisialisasi *Stateful Containers*: `docker-compose up -d postgres-master postgres-replica redis-cache`
+   - Eksekusi *Application Server*: `go run ./backend-api`
 
 ### TIER 2: Model Uji Coba Terintegrasi (Docker Cluster) 🐳
 Apabila fitur *Backend* sudah rampung, Anda wajib mengetes interaksi aplikasi secara utuh layaknya lingkungan korporat yang kokoh menempel pada *Virtual Network* Docker lokal (Mencakup K6 *Load Tester* & Prometheus Grafana).
@@ -36,6 +42,10 @@ Apabila fitur *Backend* sudah rampung, Anda wajib mengetes interaksi aplikasi se
    ```bash
    docker-compose up -d --build
    ```
+3. **Akses Panel Komando Visual (Monitoring)**:
+   - 🟢 **Status Inti Backend**: `http://localhost:9000/health`
+   - 📡 **Portal Data Prometheus**: `http://localhost:9090`
+   - 📊 **Dasbor Utama Grafana**: `http://localhost:3000` *(Kredensial Bawaan Login: `admin` / Password: `admin`)*
 
 ### TIER 3: Model Penyerahan / Production (Eksternal DB) 🌐
 Dalam lintasan menuju *Go-Live* atau Production, lapisan tangki penyimpanan *database* lokal **wajib** pensiun dan digantikan sepenuhnya oleh penyedia *Managed External Database* (seperti AWS RDS / Cloud SQL / Server Fisik On-Premise Mitra). Strategi pemisahan ini mutlak guna menjamin IOPS (Input/Output Throughput) level tinggi tanpa *bottleneck*, keamanan enkripsi finansial, dan pemulihan *Point-In-Time-Recovery*.
@@ -70,6 +80,53 @@ docker-compose down -v
 - **Isolasi Beban Transaksi Master-Replica**: Penempatan eksekusi perintah (Insert/Update) terkarantina pada **DB Master**, selagi perintah gelombang perambah massal (Select) dibelokkan instan ke **DB Replica**, mereduksi drastis hambatan latensi perpesanan antrean (*queue latency*).
 - **Elastisitas Distribusi Hybrid (Java & Go)**: Sukses membuktikan penyadapan fungsional lintas instans dengan proxy asinkron (`LazyConnectionDataSourceProxy`) dan (`dbresolver`).
 - **Idempoten DML & Skema Keamanan Tanpa Status (`Stateless`)**: Relasi tabel mumpuni berpadukan token jwt gembok basis `jwt_jti`, serta fitur `ON CONFLICT DO NOTHING` mengisolasi sistem dari kepanikan gempuran duplikasi peluncuran yang berulang-ulang.
+
+---
+
+## Fitur MVP Golang API (Fiber v2 + GORM + Redis)
+
+Arsitektur logika bisnis murni telah selesai diintegrasikan ke dalam ekosistem `main.go` yang berbasiskan kerangka kerja (*Framework*) web **Fiber v2**. Entitas API ini telah berjalan stabil pada *port* TCP **`9000`** dan berhasil mengimplementasikan kapabilitas mekanik *Read/Write Separation* di pangkalan logikanya:
+
+1. **`GET /api/accounts/:id` (Account Balance Retrieval)**
+   - Mengimplementasikan pola arsitektur sentris **Cache-Aside**. Parameter *Request* mula-mula disadap oleh memori *Redis Cache* (L1). Apabila terdeteksi insiden *Cache Miss*, fungsi pendaur kueri *GORM* akan mem-proksinya secara absolut menuju instans PostgreSQL **Replica (15433)**, lalu status simpanan *Redis* langsung diperbarui.
+2. **`POST /api/transactions/transfer` (Mutasi Finansial & Persistensi ACID)**
+   - Algoritma divalidasi dengan pengawalan integritas ketat (Atomicity) menggunakan utilitas *Pessimistic Locking* tingkat baris database SQL (`SELECT ... FOR UPDATE`). Seluruh rentet kode modifikasi *(DML)* hanya akan mengeksekusi PostgreSQL **Master (15432)** guna menghalau deviasi rasio ganda (*Race Condition*). Sesegera pasca proses komit selesai, sistem mengeksekusi serbuan *Cache Invalidation* khusus untuk mencabut entri parameter Redis yang telah direkayasa.
+3. **`POST /api/auth/login` (Autentikasi & Perekaman Audit Log)**
+   - Penerapan pola disjungsi arsitektural (*Asynchronous-Like Subroutine*). Validasi tarikan kueri identitas *(SELECT)* dipropagasi mandiri menyusuri klaster Replica. Secara simultan di sisa milidetik yang berjalan, mekanisme fungsi GORM memaksa rekaman rute aktivitas *(INSERT Audit Logs / Alamat IP)* persisten menuju *storage Master* untuk menjamin rekam kepatuhan (Compliance Standard) di industri perbankan yang kokoh.
+
+### 🚥 Prosedur Standar Uji Mutu Pengikatan Endpoint (Quality Assurance)
+Guna menghindari anomali *string escaping* interpolasi JSON pada utilitas eksternal di ekosistem OS Windows, pengujian *(testing)* administratif diamanatkan untuk secara murni menggunakan _cmdlet_ bawaan `Invoke-RestMethod` pada sesi PowerShell lokal. Penarikan UUID dinamis dapat dilakukan melalui tabel `accounts` pada modul pangkalan data pengujian *(sandbox)*.
+Berikut adalah parameter spesifikasi uji (*Test Payload*) baku yang telah tersertifikasi:
+
+**1. Pencetakan Token Navigasi JWT (Wajib Eksekusi Pertama)**
+Rute ini mencetak Kartu Tanda Masuk Digital (JWT) ke memori PowerShell Anda.
+```powershell
+$payloadAudit = '{"username":"nasabah_01","password":"rahasia"}'
+$loginResp = Invoke-RestMethod -Uri "http://localhost:9000/api/auth/login" -Method POST -Body $payloadAudit -ContentType "application/json"
+$token = $loginResp.token
+$headerAuth = @{"Authorization" = "Bearer $token"}
+```
+
+**2. Ekstraksi Saldo Lapis-L1 (Method GET)**
+Menarik informasi sensitif dengan menyematkan Token JWT di *Header*.
+```powershell
+Invoke-RestMethod -Uri "http://localhost:9000/api/accounts/<OBJEK_UUID_NASABAH>" -Method GET -Headers $headerAuth
+```
+
+**3. Transmisi Mutasi Rekening Terkunci (Method POST)**
+Uji coba fungsi purwarupa transfer atomik yang dilindungi JWT.
+```powershell
+$payloadMutasi = '{"from_account_id":"<OBJEK_UUID_PENGIRIM>","to_account_id":"<OBJEK_UUID_PENERIMA>","amount":50000}'
+Invoke-RestMethod -Uri "http://localhost:9000/api/transactions/transfer" -Method POST -Body $payloadMutasi -ContentType "application/json" -Headers $headerAuth
+```
+
+---
+
+## 🛡️ Arsitektur Keamanan Lapis Baja (Prototyping Level-2)
+Merespons standar akademik ketat untuk purwarupa layanan perbankan, infrastruktur mesin *Fiber* telah ditempa dengan 3 lapis perisai interseptor tambahan:
+1. **Stateless JWT Cryptography (`HS256`)**: Memusnahkan ketergantungan validasi berbasis *database* untuk setiap rute Mutasi dan Cek Saldo. Eksekusi kini murni hanya mengandalkan perhitungan verifikasi Tanda Tangan Kriminologis *(Token Bearer 15-Menit)* dari memori RAM, mempercepat latensi transaksi hingga persekian milidetik.
+2. **Global Sliding-Window Rate Limiter**: Anti *DDoS (L7)* aktif. Seluruh *endpoint* telah dipasangkan gembok kecepatan. Jika k6/JMeter memborbardir IP dengan lebih dari **60 Request / Menit**, *Fiber* akan otomatis membanting jaringan tersebut dengan respon `HTTP 429: Too Many Requests`.
+3. **Penyadap Metrik Prometheus (`/metrics`)**: Terminal klandestin murni *(Target Scraping Grafana)* yang langsung dijahit ke nadi inti (Core) mesin Golang menggunakan *PromHTTP Native Adaptor*. Mengekspos jutaan angka performa mulai dari *Garbage Collector (GC)* hingga Konsumsi RAM (*Alloc Bytes*) mentah ke dunia luar untuk dibuktikan secara kasat mata pada layar penguji.
 
 ---
 

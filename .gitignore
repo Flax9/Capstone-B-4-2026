@@ -1,0 +1,33 @@
+# IDE & Tim
+.vscode/
+.idea/
+*.DS_Store
+
+# Logs & Binaries Umum
+*.log
+*.tmp
+*.exe
+tmp.exe
+server.exe
+main.exe
+
+# Titik Rahasia (Sangat Penting)
+.env
+# Hanya .env yang di-ignore. File .env.development.template dan .env.partner.template WAJIB masuk git!
+
+# Golang Cache (Wilayah Backend Furqon)
+/backend-api/server
+/backend-api/*.test
+/backend-api/*.out
+/backend-api/tmp/
+
+# Java/Maven Cache (Wilayah Backend Nadia)
+target/
+*.jar
+*.war
+.mvn/
+
+# K6 Load Testing (Wilayah SRE Rafael)
+*.csv
+*report.html
+*summary.json

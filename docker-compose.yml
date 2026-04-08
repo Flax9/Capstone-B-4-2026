@@ -9,7 +9,9 @@ x-logging: &default-logging
 
 services:
   postgres-master:
-    image: bitnami/postgresql:15
+    image: bitnami/postgresql:latest
+    ports:
+      - "15432:5432"
     environment:
       - POSTGRESQL_REPLICATION_MODE=master
       - POSTGRESQL_REPLICATION_USER=repl_user
@@ -32,7 +34,9 @@ services:
     logging: *default-logging
 
   postgres-replica:
-    image: bitnami/postgresql:15
+    image: bitnami/postgresql:latest
+    ports:
+      - "15433:5432"
     environment:
       - POSTGRESQL_REPLICATION_MODE=slave
       - POSTGRESQL_REPLICATION_USER=repl_user
@@ -73,15 +77,12 @@ services:
       context: ./backend-api
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
-    environment: # Menambahkan environment untuk Master-Replica yang fleksibel dengan .env file
-      - SPRING_PROFILES_ACTIVE=${APP_PROFILE:-production}
-      - DB_MASTER_URL=${DB_MASTER_URL:-jdbc:postgresql://postgres-master:5432/capstonev2}
-      - DB_MASTER_USER=${DB_MASTER_USER:-user}
-      - DB_MASTER_PASS=${DB_MASTER_PASS:-password}
-      - DB_REPLICA_URL=${DB_REPLICA_URL:-jdbc:postgresql://postgres-replica:5432/capstonev2}
-      - DB_REPLICA_USER=${DB_REPLICA_USER:-user}
-      - DB_REPLICA_PASS=${DB_REPLICA_PASS:-password}
+      - "9000:9000"
+    environment: 
+      - DB_MASTER_HOST=postgres-master
+      - DB_MASTER_PORT=5432
+      - DB_REPLICA_HOST=postgres-replica
+      - DB_REPLICA_PORT=5432
       - REDIS_HOST=redis-cache
       - REDIS_PORT=6379
     networks:
