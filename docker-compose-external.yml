@@ -1,0 +1,100 @@
+version: '3.8'
+
+# ========================================================
+# DOCKER COMPOSE KHUSUS PRODUCTION / DATABASE EKSTERNAL
+# ========================================================
+# File Compose ini sengaja dipisahkan agar saat peluncuran Production,
+# Anda tidak perlu me-robek/mengedit docker-compose.yml yang asli.
+# File ini MURNI HANYA berisi API dan Observability tanpa Database lokal.
+# KONEKSI DATABASE WAJIB DISEBUTKAN DI FILE .env (Format .env.partner.template)
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  redis-cache:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    networks:
+      - data-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  backend-api:
+    build:
+      context: ./backend-api
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment: 
+      - SPRING_PROFILES_ACTIVE=${APP_PROFILE:-production}
+      - DB_MASTER_URL=${DB_MASTER_URL}
+      - DB_MASTER_USER=${DB_MASTER_USER}
+      - DB_MASTER_PASS=${DB_MASTER_PASS}
+      - DB_REPLICA_URL=${DB_REPLICA_URL}
+      - DB_REPLICA_USER=${DB_REPLICA_USER}
+      - DB_REPLICA_PASS=${DB_REPLICA_PASS}
+      - REDIS_HOST=redis-cache
+      - REDIS_PORT=6379
+    networks:
+      - api-net
+      - data-net
+    depends_on:
+      redis-cache:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1.5G
+    logging: *default-logging
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - api-net
+    logging: *default-logging
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - api-net
+    logging: *default-logging
+
+  k6-loadtester:
+    image: grafana/k6:latest
+    profiles: ["testing"]
+    volumes:
+      - ./k6-scripts:/scripts
+    networks:
+      - api-net
+    logging: *default-logging
+
+networks:
+  api-net:
+    driver: bridge
+  data-net:
+    driver: bridge
+
+volumes:
+  redis_data:
+  prometheus_data:
+  grafana_data:

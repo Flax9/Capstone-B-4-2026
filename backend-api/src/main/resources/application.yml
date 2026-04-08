@@ -2,14 +2,34 @@ spring:
   application:
     name: capstone-backend
   datasource:
-    # URL menggunakan hostname container db
-    url: jdbc:postgresql://postgres-db:5432/bank_db
-    username: user
-    password: password
+    master:
+      url: ${DB_MASTER_URL:jdbc:postgresql://localhost:5432/bank_db}
+      username: ${DB_MASTER_USER:postgres}
+      password: ${DB_MASTER_PASS:password}
+      driver-class-name: org.postgresql.Driver
+      hikari:
+        pool-name: MasterHikariCP
+        maximum-pool-size: 10
+    replica:
+      url: ${DB_REPLICA_URL:jdbc:postgresql://localhost:5432/bank_db}
+      username: ${DB_REPLICA_USER:postgres}
+      password: ${DB_REPLICA_PASS:password}
+      driver-class-name: org.postgresql.Driver
+      hikari:
+        pool-name: ReplicaHikariCP
+        maximum-pool-size: 10
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    show-sql: true
   data:
     redis:
-      host: redis-cache
-      port: 6379
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
 
 management:
   endpoints:

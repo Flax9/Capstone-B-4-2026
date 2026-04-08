@@ -8,21 +8,47 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  postgres-db:
-    image: postgres:15-alpine
+  postgres-master:
+    image: bitnami/postgresql:15
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: bank_db
+      - POSTGRESQL_REPLICATION_MODE=master
+      - POSTGRESQL_REPLICATION_USER=repl_user
+      - POSTGRESQL_REPLICATION_PASSWORD=repl_password
+      - POSTGRESQL_USERNAME=user
+      - POSTGRESQL_PASSWORD=password
+      - POSTGRESQL_DATABASE=capstonev2
     networks:
       - data-net
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_master_data:/bitnami/postgresql
       - ./database-init:/docker-entrypoint-initdb.d
     cap_add:
-      - NET_ADMIN # Memungkinkan simulasi network delay dengan tc netem di kemudian hari
+      - NET_ADMIN
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user"]
+      test: ["CMD-SHELL", "pg_isready -U user -d capstonev2"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  postgres-replica:
+    image: bitnami/postgresql:15
+    environment:
+      - POSTGRESQL_REPLICATION_MODE=slave
+      - POSTGRESQL_REPLICATION_USER=repl_user
+      - POSTGRESQL_REPLICATION_PASSWORD=repl_password
+      - POSTGRESQL_MASTER_HOST=postgres-master
+      - POSTGRESQL_MASTER_PORT_NUMBER=5432
+      - POSTGRESQL_USERNAME=user
+      - POSTGRESQL_PASSWORD=password
+    networks:
+      - data-net
+    depends_on:
+      - postgres-master
+    volumes:
+      - postgres_replica_data:/bitnami/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d capstonev2"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -48,18 +74,23 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
-    environment: # Menambahkan default environment supaya API dapat terhubung ke kontainer lain
+    environment: # Menambahkan environment untuk Master-Replica yang fleksibel dengan .env file
       - SPRING_PROFILES_ACTIVE=${APP_PROFILE:-production}
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/bank_db
-      - SPRING_DATASOURCE_USERNAME=user
-      - SPRING_DATASOURCE_PASSWORD=password
-      - SPRING_REDIS_HOST=redis-cache
-      - SPRING_REDIS_PORT=6379
+      - DB_MASTER_URL=${DB_MASTER_URL:-jdbc:postgresql://postgres-master:5432/capstonev2}
+      - DB_MASTER_USER=${DB_MASTER_USER:-user}
+      - DB_MASTER_PASS=${DB_MASTER_PASS:-password}
+      - DB_REPLICA_URL=${DB_REPLICA_URL:-jdbc:postgresql://postgres-replica:5432/capstonev2}
+      - DB_REPLICA_USER=${DB_REPLICA_USER:-user}
+      - DB_REPLICA_PASS=${DB_REPLICA_PASS:-password}
+      - REDIS_HOST=redis-cache
+      - REDIS_PORT=6379
     networks:
       - api-net
       - data-net
     depends_on:
-      postgres-db:
+      postgres-master:
+        condition: service_healthy
+      postgres-replica:
         condition: service_healthy
       redis-cache:
         condition: service_healthy
@@ -109,7 +140,8 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
+  postgres_master_data:
+  postgres_replica_data:
   redis_data:
   prometheus_data:
   grafana_data:

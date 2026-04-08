@@ -23,13 +23,23 @@ capstone-backend-b4/
 
 Bagian ini berisi langkah-langkah detail untuk menjalankan, mengelola, dan mematikan environment Docker secara lokal. Pastikan Anda sudah menginstall Docker Desktop.
 
-### 1. Build & Start (Pertama Kali)
-Gunakan perintah ini untuk mem-build *image* aplikasi Spring Boot dan menjalankan semua container (PostgreSQL, Redis, dll) di latar belakang:
+### 1. Persiapan File Environment (.env)
+Karena arsitektur kita sekarang mendukung pemisahan dinamis *Master-Replica*, kredensial tidak lagi ditanam atau (*hardcoded*).
+- Salin/Rename file `.env.template` menjadi `.env`.
+- Buka `.env` dan atur propertinya:
+  - Gunakan `host.docker.internal` jika komputer tersebut menggunakan/memiliki instalasi PostgreSQL eksternal (contohnya DBeaver lokal).
+  - Atau biarkan saja isi bawaannya bila Anda mengandalkan kontainer DB virtual di `docker-compose`.
+
+### 2. Pembuatan Struktur Skema (Khusus PG Eksternal)
+- Bila Anda memilih menyambung ke PostgreSQL lokal di PC baru tersebut, pastikan pembuatan struktur relasi dilakukan terlebih dahulu dengan mengeksekusi isi skrip pada `schema/init.sql` pada terminal SQL/DBeaver.
+
+### 3. Build & Start Seluruh Komponen Engine
+Setelah fondasi kunci (env & skema) rampung, *compile* serta nyalakan lingkungan *backend* menggunakan perintah ajaib ini:
 ```bash
 docker-compose up -d --build
 ```
 > [!NOTE]
-> *Tunggu beberapa saat pada run pertama. Backend API baru akan menyala **setelah** PostgreSQL dan Redis berstatus `healthy`.*
+> *Tunggu beberapa saat hingga mesin Docker berhasil melakukan resolusi dan agregasi image. Pastikan layanan Docker Desktop Anda berstatus On.*
 
 ### 2. Melihat Log Aplikasi (Debugging)
 Untuk melihat secara *real-time* apa yang sedang terjadi di *backend-api*:
@@ -62,6 +72,42 @@ docker-compose down -v
 ```
 
 *(Catatan Tambahan untuk tim: Tolong diskusikan atau review bersama jika Anda berniat memodifikasi infrastruktur inti di `docker-compose.yml`!).*
+
+---
+
+## 🏗️ Pembaruan Arsitektur & Progres Utama (Master-Replica)
+
+Berdasarkan pemutakhiran infrastruktur terbaru, proyek ini telah mengadopsi standar rekayasa tingkat lanjut:
+
+### 1. Pola Arsitektur Read/Write Separation (Master-Replica)
+Dirancang khusus untuk melunasi target *Service Level Objective* (SLO) memangkas waktu respons hingga 30%.
+- **Mekanisme**: Perintah modifikasi data (Insert/Update/Delete) ditangani eksklusif oleh **DB Utama (Master)**, sementara seluruh perintah pembacaan (Select) disalurkan otomatis ke **DB Cadangan (Replica)** untuk mengurangi latensi antrean operasi dasar.
+
+### 2. Implementasi Database Routing Ganda (Java & Go)
+Repositori ini memiliki dua mode pendekatan *backend* yang diisolasi dengan cermat:
+- **Sisi Spring Boot (Java)**: Penyadapan otomatis di tingkat kode terjamin oleh adaptasi `AbstractRoutingDataSource` serta proteksi deteksi koneksi via `LazyConnectionDataSourceProxy` (`@Transactional(readOnly=true)`).
+- **Sisi Golang (GORM)**: Dilengkapi distribusi `dbresolver` dengan kebijakan rute (*RandomPolicy*) untuk efisiensi instan berbasis Golang lokal.
+
+### 3. Integrasi Endpoint JWT & Skema Independen
+- File *bootstrap* relasional SQL (DDL) dirancang mumpuni mencakup *entity* fungsional inti: `users`, `accounts`, dan `transactions` dengan penyiapan optimasi Indeksasi.
+- Konversi arsitektural pada tabel `sessions` untuk bergerak ringan (*Stateless*) dengan validasi gembok basis `jwt_jti`.
+
+### 4. Jaringan Lingkungan Docker Terdistribusi Bebas
+Struktur orkestrasi `docker-compose` sudah dikonfigurasikan agar adaptif menggantungkan interkonektivitas file `.env` di atas topologi `host.docker.internal`, memungkinkan para *developer* menyuntik langsung *Instance* PostgreSQL mandiri mereka dari sistem *Host* tanpa membongkar bongkahan *container* internal.
+
+### 5. Panduan Transisi Sistem ke Database Eksternal (Fase Production)
+Meskipun rancangan *Master-Replica* saat ini berjalan sangat memanjakan *developer* di dalam lingkup Docker untuk fase *Development* dan Uji Coba, arsitektur ini **WAJIB** memboyong (*export*) *layer* databasenya keluar menuju *Managed External Database* (seperti AWS RDS / Server Spesifik) bila menemui 3 pemicu berikut:
+- **Menjelang Peluncuran (Go-Live)**: Membutuhkan jaminan keamanan regulasi (*Encryption at Rest*) & fitur keamanan data dari kemusnahan (*Point-in-Time Recovery*) yang sulit didapat di *Docker Volume*.
+- **Kendala Botol Leher (I/O Throughput)**: Volume baca/tulis aplikasi (seperti target 30k TRX/jam) mulai membentur batas atas performa kecepatan virtualisasi disk bawaan Docker.
+- **Tuntutan Keselamatan (Uptime 99.9%)**: Insulasi sistem. Bila server mesin Docker API hancur/padam, tumpukan *database* raksasa nasabah di server eksternal dipastikan tetap hidup bernapas tanpa terganggu rontoknya *container*.
+**Langkah-Langkah Eksekusi Migrasi Menuju DB Eksternal:**
+1. **Siapkan Kredensial (Environment)**: Salin file `.env.partner.template` menjadi sebuah file bernama `.env` di server.
+2. **Kunci Target IP Publik**: Buka `.env`, lalu ganti *placeholder* IP `198.51.100.x` yang tertera pada `DB_MASTER_URL` dan `DB_REPLICA_URL` agar menarget lurus ke alamat IP/Domain mesin database raksasa spesifik milik Anda/mitra.
+3. **Penyalaan Khusus Produksi**: Jangan pakai perintah compose yang biasa! Tanpa perlu membongkar-bongkar konfigurasi kode infrastruktur asli, langsung terbangkan ekosistem secara murni *API only* menggunakan file deklrasi yang kami pisahkan:
+```bash
+docker-compose -f docker-compose-external.yml up -d --build
+```
+Kontainer `backend-api` otomatis bangkit sendirian tanpa beban dan meluncurkan semua tembakan transaksi basis datanya eksklusif keluar menuju pusaran Awan (Cloud/External) yang Anda tuju!
 
 ---
 
