@@ -15,99 +15,60 @@ capstone-backend-b4/
 │   └── 01-init-dummy.sql
 ├── k6-scripts/                  <-- (Wilayah Rafael: Skenario Load Testing)
 │   └── dummy-load-test.js
-└── monitoring/                  <-- (Wilayah Ego & Vanessa: Konfigurasi Observabilitas)
-    └── prometheus.yml
-```
+└── monitoring/                  <-- (Wilayah Ego & Vaness## 🚀 Panduan Deployment (Sistem 3-Tier Workflow)
 
-## � Panduan Deployment & Cara Penggunaan (Resep)
+Bagian ini berisi langkah-langkah presisi tinggi untuk menjalankan, mengelola, dan mematikan environment arsitektur Master-Replica perbankan Anda secara terstruktur. Pastikan Anda sudah menginstall Docker Desktop.
 
-Bagian ini berisi langkah-langkah detail untuk menjalankan, mengelola, dan mematikan environment Docker secara lokal. Pastikan Anda sudah menginstall Docker Desktop.
+### TIER 1: Model Development Murni / IDE 💻
+Di mode ini, *developer* (Backend Java/Go) men-debug kodingannya langsung melalui jendela *Run Button* IDE favorit (VSCode/IntelliJ) tanpa melempar Node API ke dalam Docker, namun mendelegasikan beban *databasenya* ke kontainer lokal.
+1. Salin draf `.env.development.template` menjadi sebuah file utuh bernama `.env`.
+2. Anda akan mendapati letak koneksi *Master* terkunci di `localhost:5432` dan *Replica* di `localhost:5433` pada laptop Anda.
+3. Pancing mesin databasenya secara independen dengan eksekusi:
+   ```bash
+   docker-compose up -d postgres-master postgres-replica redis-cache
+   ```
 
-### 1. Persiapan File Environment (.env)
-Karena arsitektur kita sekarang mendukung pemisahan dinamis *Master-Replica*, kredensial tidak lagi ditanam atau (*hardcoded*).
-- Salin/Rename file `.env.template` menjadi `.env`.
-- Buka `.env` dan atur propertinya:
-  - Gunakan `host.docker.internal` jika komputer tersebut menggunakan/memiliki instalasi PostgreSQL eksternal (contohnya DBeaver lokal).
-  - Atau biarkan saja isi bawaannya bila Anda mengandalkan kontainer DB virtual di `docker-compose`.
+### TIER 2: Model Uji Coba Terintegrasi (Docker Cluster) 🐳
+Apabila fitur *Backend* sudah rampung, Anda wajib mengetes interaksi aplikasi secara utuh layaknya lingkungan korporat yang kokoh menempel pada *Virtual Network* Docker lokal (Mencakup K6 *Load Tester* & Prometheus Grafana).
+1. Pastikan seluruh relasi dan DDL termutakhir di `01-init.sql`.
+2. Peluncuran Klaster Menyeluruh (API + DB + Redis + Tools):
+   ```bash
+   docker-compose up -d --build
+   ```
 
-### 2. Pembuatan Struktur Skema (Khusus PG Eksternal)
-- Bila Anda memilih menyambung ke PostgreSQL lokal di PC baru tersebut, pastikan pembuatan struktur relasi dilakukan terlebih dahulu dengan mengeksekusi isi skrip pada `schema/init.sql` pada terminal SQL/DBeaver.
+### TIER 3: Model Penyerahan / Production (Eksternal DB) 🌐
+Dalam lintasan menuju *Go-Live* atau Production, lapisan tangki penyimpanan *database* lokal **wajib** pensiun dan digantikan sepenuhnya oleh penyedia *Managed External Database* (seperti AWS RDS / Cloud SQL / Server Fisik On-Premise Mitra). Strategi pemisahan ini mutlak guna menjamin IOPS (Input/Output Throughput) level tinggi tanpa *bottleneck*, keamanan enkripsi finansial, dan pemulihan *Point-In-Time-Recovery*.
+1. **Siapkan Kredensial**: Salin draf suci `.env.partner.template` menjadi sebuah `.env` di peladen produksi / kantor Mitra. Buka dan patrikan/ubah alamat URL-nya agar menarget lempeng IP mesin Database Eksternal raksasa mereka.
+2. **Penyalaan Khusus Produksi**: Jangan gunakan file *compose* standar! Cukup terbangkan klaster murni secara terpusat "API Only" melalui deklarasi ekstensi ini di konsol terminal Production:
+   ```bash
+   docker-compose -f docker-compose-external.yml up -d --build
+   ```
+Dalam sekejap, kontainer mandiri `backend-api` Anda secara gagah melebarkan pipa transaksinya (*JPA/GORM*) menerjang langsung ke DB Awan Mitra!
 
-### 3. Build & Start Seluruh Komponen Engine
-Setelah fondasi kunci (env & skema) rampung, *compile* serta nyalakan lingkungan *backend* menggunakan perintah ajaib ini:
-```bash
-docker-compose up -d --build
-```
-> [!NOTE]
-> *Tunggu beberapa saat hingga mesin Docker berhasil melakukan resolusi dan agregasi image. Pastikan layanan Docker Desktop Anda berstatus On.*
+---
 
-### 2. Melihat Log Aplikasi (Debugging)
-Untuk melihat secara *real-time* apa yang sedang terjadi di *backend-api*:
-```bash
-docker-compose logs -f backend-api
-```
-*(Gunakan `CTRL+C` pada terminal untuk berhenti melihat log).*
+## 🛠️ Tata Kelola Infrastruktur Tambahan
 
-### 3. Menjalankan Load Test (Menggunakan k6)
-Container load-tester dirancang untuk **tidak menyala otomatis**. Untuk men-trigger *test plan* (`dummy-load-test.js`), eksekusi perintah ini:
-```bash
-docker-compose --profile testing run --rm k6-loadtester run /scripts/dummy-load-test.js
-```
+### 1. Eksekusi Skema Struktur (Tabel / DDL)
+Sebaiknya Anda membaca skrip `database-init/01-init.sql`. Skrip mutakhir ini terinjeksi saklar kebal overwriting (`CREATE TABLE IF NOT EXISTS`). Saat kontainer *postgres-master* lahir, file ini ditayangkan otomatis. Bilamana Anda beralih pada Tier 3 (External Postgres/DBeaver Pihak Ketiga), maka cukup *copy-paste* jajaran _query_ tersebut ke layar *admin* klien mitra.
 
-### 4. Menghentikan Environment (Stop & Down)
-Jika Anda selesai bekerja dan ingin mematikan container **tanpa menghilangkan apapun** (Volume dipertahankan):
-```bash
-docker-compose stop
-```
-Jika Anda ingin mematikan container dan menghapus jaringannya (Volume tetap utuh & aman):
-```bash
-docker-compose down
-```
+### 2. Memantau Denyut Log Sistem & Stress Test
+Membaca getar langkah kontainer Java/Go: `docker-compose logs -f backend-api`
+Menekan pemicu letusan K6 (Simulasi 30k TRX/Jam): `docker-compose --profile testing run --rm k6-loadtester run /scripts/dummy-load-test.js`
 
-### 5. Memusnahkan Total Lingkungan (Clean Slate Mode)
+### 3. Pemusnahan Ke Titik Nol (Clean Slate Mode)
 > [!CAUTION]
-> Perintah ini akan menghapus container, network, DAN SELURUH ISI DATABASE (Volume). Eksekusi hanya jika Anda ingin mereset state sistem 100% dari nol.
+> Taktik bumi hangus. Jika Anda ingin meratakan `postgres_master_data` dan menyapu bersih seluruh residu kontainer serta ketersediaan datanya hingga menguap 100%:
 ```bash
 docker-compose down -v
 ```
 
-*(Catatan Tambahan untuk tim: Tolong diskusikan atau review bersama jika Anda berniat memodifikasi infrastruktur inti di `docker-compose.yml`!).*
-
 ---
 
-## 🏗️ Pembaruan Arsitektur & Progres Utama (Master-Replica)
-
-Berdasarkan pemutakhiran infrastruktur terbaru, proyek ini telah mengadopsi standar rekayasa tingkat lanjut:
-
-### 1. Pola Arsitektur Read/Write Separation (Master-Replica)
-Dirancang khusus untuk melunasi target *Service Level Objective* (SLO) memangkas waktu respons hingga 30%.
-- **Mekanisme**: Perintah modifikasi data (Insert/Update/Delete) ditangani eksklusif oleh **DB Utama (Master)**, sementara seluruh perintah pembacaan (Select) disalurkan otomatis ke **DB Cadangan (Replica)** untuk mengurangi latensi antrean operasi dasar.
-
-### 2. Implementasi Database Routing Ganda (Java & Go)
-Repositori ini memiliki dua mode pendekatan *backend* yang diisolasi dengan cermat:
-- **Sisi Spring Boot (Java)**: Penyadapan otomatis di tingkat kode terjamin oleh adaptasi `AbstractRoutingDataSource` serta proteksi deteksi koneksi via `LazyConnectionDataSourceProxy` (`@Transactional(readOnly=true)`).
-- **Sisi Golang (GORM)**: Dilengkapi distribusi `dbresolver` dengan kebijakan rute (*RandomPolicy*) untuk efisiensi instan berbasis Golang lokal.
-
-### 3. Integrasi Endpoint JWT & Skema Independen
-- File *bootstrap* relasional SQL (DDL) dirancang mumpuni mencakup *entity* fungsional inti: `users`, `accounts`, dan `transactions` dengan penyiapan optimasi Indeksasi.
-- Konversi arsitektural pada tabel `sessions` untuk bergerak ringan (*Stateless*) dengan validasi gembok basis `jwt_jti`.
-
-### 4. Jaringan Lingkungan Docker Terdistribusi Bebas
-Struktur orkestrasi `docker-compose` sudah dikonfigurasikan agar adaptif menggantungkan interkonektivitas file `.env` di atas topologi `host.docker.internal`, memungkinkan para *developer* menyuntik langsung *Instance* PostgreSQL mandiri mereka dari sistem *Host* tanpa membongkar bongkahan *container* internal.
-
-### 5. Panduan Transisi Sistem ke Database Eksternal (Fase Production)
-Meskipun rancangan *Master-Replica* saat ini berjalan sangat memanjakan *developer* di dalam lingkup Docker untuk fase *Development* dan Uji Coba, arsitektur ini **WAJIB** memboyong (*export*) *layer* databasenya keluar menuju *Managed External Database* (seperti AWS RDS / Server Spesifik) bila menemui 3 pemicu berikut:
-- **Menjelang Peluncuran (Go-Live)**: Membutuhkan jaminan keamanan regulasi (*Encryption at Rest*) & fitur keamanan data dari kemusnahan (*Point-in-Time Recovery*) yang sulit didapat di *Docker Volume*.
-- **Kendala Botol Leher (I/O Throughput)**: Volume baca/tulis aplikasi (seperti target 30k TRX/jam) mulai membentur batas atas performa kecepatan virtualisasi disk bawaan Docker.
-- **Tuntutan Keselamatan (Uptime 99.9%)**: Insulasi sistem. Bila server mesin Docker API hancur/padam, tumpukan *database* raksasa nasabah di server eksternal dipastikan tetap hidup bernapas tanpa terganggu rontoknya *container*.
-**Langkah-Langkah Eksekusi Migrasi Menuju DB Eksternal:**
-1. **Siapkan Kredensial (Environment)**: Salin file `.env.partner.template` menjadi sebuah file bernama `.env` di server.
-2. **Kunci Target IP Publik**: Buka `.env`, lalu ganti *placeholder* IP `198.51.100.x` yang tertera pada `DB_MASTER_URL` dan `DB_REPLICA_URL` agar menarget lurus ke alamat IP/Domain mesin database raksasa spesifik milik Anda/mitra.
-3. **Penyalaan Khusus Produksi**: Jangan pakai perintah compose yang biasa! Tanpa perlu membongkar-bongkar konfigurasi kode infrastruktur asli, langsung terbangkan ekosistem secara murni *API only* menggunakan file deklrasi yang kami pisahkan:
-```bash
-docker-compose -f docker-compose-external.yml up -d --build
-```
-Kontainer `backend-api` otomatis bangkit sendirian tanpa beban dan meluncurkan semua tembakan transaksi basis datanya eksklusif keluar menuju pusaran Awan (Cloud/External) yang Anda tuju!
+## 🏗️ Keunggulan Infrastruktur Arsitektur Puncak
+- **Isolasi Beban Transaksi Master-Replica**: Penempatan eksekusi perintah (Insert/Update) terkarantina pada **DB Master**, selagi perintah gelombang perambah massal (Select) dibelokkan instan ke **DB Replica**, mereduksi drastis hambatan latensi perpesanan antrean (*queue latency*).
+- **Elastisitas Distribusi Hybrid (Java & Go)**: Sukses membuktikan penyadapan fungsional lintas instans dengan proxy asinkron (`LazyConnectionDataSourceProxy`) dan (`dbresolver`).
+- **Idempoten DML & Skema Keamanan Tanpa Status (`Stateless`)**: Relasi tabel mumpuni berpadukan token jwt gembok basis `jwt_jti`, serta fitur `ON CONFLICT DO NOTHING` mengisolasi sistem dari kepanikan gempuran duplikasi peluncuran yang berulang-ulang.
 
 ---
 
