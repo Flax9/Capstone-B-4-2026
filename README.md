@@ -107,8 +107,9 @@ Pastikan Docker Services (Tier 2) sudah aktif dan berjalan. Buka aplikasi Termin
 #### TAHAP 0 : Mengumpulkan UUID (Universally Unique Identifier)
 Dikarenakan Endpoint Transfer dan Cek Saldo membutuhkan ID unik (account_id) bawaan Database dan bukan hanya angka rekening biasa demi keamanan.
 Tarik daftar UUID-nya secara paksa langsung dari instans kontainer PostgreSQL:
-
+```
 docker-compose exec -e PGPASSWORD=password postgres-master psql -U user -d capstonev2 -P pager=off -c "SELECT account_id, account_number, balance FROM accounts;"
+```
 
 Dicatat dua UUID yang keluar dari tabel pada Terminal Anda. Variabel Asumsi:
 - UUID Pengirim (Akun 1): 924de2cf-e950-4f92-8e37-ae2eb7dda7e5
