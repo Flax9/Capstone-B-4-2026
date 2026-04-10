@@ -98,28 +98,63 @@ Arsitektur logika bisnis murni telah selesai diintegrasikan ke dalam ekosistem `
 Guna menghindari anomali *string escaping* interpolasi JSON pada utilitas eksternal di ekosistem OS Windows, pengujian *(testing)* administratif diamanatkan untuk secara murni menggunakan _cmdlet_ bawaan `Invoke-RestMethod` pada sesi PowerShell lokal. Penarikan UUID dinamis dapat dilakukan melalui tabel `accounts` pada modul pangkalan data pengujian *(sandbox)*.
 Berikut adalah parameter spesifikasi uji (*Test Payload*) baku yang telah tersertifikasi:
 
-**1. Pencetakan Token Navigasi JWT (Wajib Eksekusi Pertama)**
-Rute ini mencetak Kartu Tanda Masuk Digital (JWT) ke memori PowerShell Anda.
+### 🚥 Prosedur Standar Uji Mutu Pengikatan Endpoint (OS Windows - PowerShell)
+
+Karena Windows PowerShell memiliki struktur pembacaan karakter tanda kutip tunggal/ganda (JSON) yang ketat, pengujian API ini direkomendasikan menggunakan perakitan variabel native PowerShell.
+
+Pastikan Docker Services (Tier 2) sudah aktif dan berjalan. Buka aplikasi Terminal PowerShell, arahkan (CD) ke folder tempat `docker-compose.yml` berada, lalu ikuti urutan perintah ini:
+
+#### TAHAP 0 : Mengumpulkan UUID (Universally Unique Identifier)
+Dikarenakan Endpoint Transfer dan Cek Saldo membutuhkan ID unik (account_id) bawaan Database dan bukan hanya angka rekening biasa demi keamanan.
+Tarik daftar UUID-nya secara paksa langsung dari instans kontainer PostgreSQL:
+
+docker-compose exec -e PGPASSWORD=password postgres-master psql -U user -d capstonev2 -P pager=off -c "SELECT account_id, account_number, balance FROM accounts;"
+
+Dicatat dua UUID yang keluar dari tabel pada Terminal Anda. Variabel Asumsi:
+- UUID Pengirim (Akun 1): 924de2cf-e950-4f92-8e37-ae2eb7dda7e5
+- UUID Penerima (Akun 2): e3acd2bc-94d1-475e-ac7a-12fe405ad426
+
+#### TAHAP 1 : Autentikasi Sistem & Mencetak Token Kriptografi (JWT)
+Harap catat, Token JWT Server Golang ini memiliki batas hangus waktu (Expired) *hanya 15 menit*. Oleh karena itu eksekusi Tahap 2 dan 3 wajib dilakukan pada saat Token ini baru dicetak.
+Jalankan deretan skrip PowerShell ini secara berurutan:
+
 ```powershell
-$payloadAudit = '{"username":"nasabah_01","password":"rahasia"}'
-$loginResp = Invoke-RestMethod -Uri "http://localhost:9000/api/auth/login" -Method POST -Body $payloadAudit -ContentType "application/json"
-$token = $loginResp.token
-$headerAuth = @{"Authorization" = "Bearer $token"}
+$bodyLogin = @{ username="nasabah_01"; password="rahasia" } | ConvertTo-Json
+$response = Invoke-RestMethod -Uri "http://localhost:9000/api/auth/login" -Method POST -Body $bodyLogin -ContentType "application/json"
+$token = $response.token
+$headers = @{ "Authorization" = "Bearer $token" }
+Write-Host "Sesi JWT Aktif! Token Tersimpan: $token"
 ```
 
-**2. Ekstraksi Saldo Lapis-L1 (Method GET)**
-Menarik informasi sensitif dengan menyematkan Token JWT di *Header*.
+#### TAHAP 2 : Ekstraksi Saldo Lapis Utama (Method GET)
+Karena variabel `$headers` (yang berisi Token Kunci) masih ada di rekam jejak memori PowerShell Anda, Anda bebas menembus Gateway tanpa ditolak.
+
+# Ganti dengan UUID yang didapat di Tahap 0
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:9000/api/accounts/<OBJEK_UUID_NASABAH>" -Method GET -Headers $headerAuth
+$idAkunTarget = "924de2cf-e950-4f92-8e37-ae2eb7dda7e5" 
 ```
 
-**3. Transmisi Mutasi Rekening Terkunci (Method POST)**
-Uji coba fungsi purwarupa transfer atomik yang dilindungi JWT.
+# Kirim Request GET nya (Hanya Memerlukan URL & Headers)
 ```powershell
-$payloadMutasi = '{"from_account_id":"<OBJEK_UUID_PENGIRIM>","to_account_id":"<OBJEK_UUID_PENERIMA>","amount":50000}'
-Invoke-RestMethod -Uri "http://localhost:9000/api/transactions/transfer" -Method POST -Body $payloadMutasi -ContentType "application/json" -Headers $headerAuth
+Invoke-RestMethod -Uri "http://localhost:9000/api/accounts/$idAkunTarget" -Method GET -Headers $headers
 ```
 
+#### TAHAP 3 : Simulasi Transaksi Mutasi Rekening Terkunci (Method POST)
+Lakukan instruksi POST dengan menyematkan formulir pengiriman saldo secara dinamis melalui parameter yang dikonversi menjadi format standar web murni (JSON):
+
+# Rakit Payload Body Transaksi dengan aman
+```powershell
+$bodyMutasi = @{ 
+    from_account_id = "924de2cf-e950-4f92-8e37-ae2eb7dda7e5";    # UUID Pengirim
+    to_account_id   = "e3acd2bc-94d1-475e-ac7a-12fe405ad426";    # UUID Penerima
+    amount          = 50000                                      # Saldo Mutasi Rp. 50.000
+} | ConvertTo-Json
+```
+
+# Kirim Request (POST)
+```powershell
+Invoke-RestMethod -Uri "http://localhost:9000/api/transactions/transfer" -Method POST -Body $bodyMutasi -ContentType "application/json" -Headers $headers
+```
 ---
 
 ## 🛡️ Arsitektur Keamanan Lapis Baja (Prototyping Level-2)
