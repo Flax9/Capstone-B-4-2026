@@ -137,13 +137,14 @@ $idAkunTarget = "924de2cf-e950-4f92-8e37-ae2eb7dda7e5"
 
 # Kirim Request GET nya (Hanya Memerlukan URL & Headers)
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:9000/api/accounts/$idAkunTarget" -Method GET -Headers $headers
+Invoke-RestMethod -Uri "http://localhost:9000/api/accounts/$idAkunTarget" -Method GET -Headers $headers | ConvertTo-Json -Depth 5
 ```
 
 #### TAHAP 3 : Simulasi Transaksi Mutasi Rekening Terkunci (Method POST)
 Lakukan instruksi POST dengan menyematkan formulir pengiriman saldo secara dinamis melalui parameter yang dikonversi menjadi format standar web murni (JSON):
 
-# Rakit Payload Body Transaksi dengan aman
+# Rakit Payload Body Transaksi dengan aman fungsi transfer uang
+# Payload konfig
 ```powershell
 $bodyMutasi = @{ 
     from_account_id = "924de2cf-e950-4f92-8e37-ae2eb7dda7e5";    # UUID Pengirim
@@ -152,7 +153,7 @@ $bodyMutasi = @{
 } | ConvertTo-Json
 ```
 
-# Kirim Request (POST)
+# Kirim Request (POST) guna mentransfer uang
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:9000/api/transactions/transfer" -Method POST -Body $bodyMutasi -ContentType "application/json" -Headers $headers
 ```
