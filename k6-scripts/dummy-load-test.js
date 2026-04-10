@@ -7,7 +7,7 @@ export const options = {
 };
 
 export default function () {
-    const res = http.get('http://backend-api:8080/actuator/health');
+    const res = http.get('http://backend-api:9000/health');
     check(res, {
         'is status 200': (r) => r.status === 200,
     });

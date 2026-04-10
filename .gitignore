@@ -15,7 +15,7 @@ main.exe
 .env
 # Hanya .env yang di-ignore. File .env.development.template dan .env.partner.template WAJIB masuk git!
 
-# Golang Cache (Wilayah Backend Furqon)
+# Golang Cache
 /backend-api/server
 /backend-api/*.test
 /backend-api/*.out
