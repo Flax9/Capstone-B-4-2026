@@ -148,8 +148,13 @@ Saat ini, *Boilerplate* infrastruktur sudah menyala sempurna menggunakan kontain
 
 - **Ego & Vanessa (Monitoring)**:
   - Buka *Dashboard* Grafana di `http://localhost:3000`.
-  - Sambungkan *Data Source* ke Prometheus (`http://prometheus:9090`).
+  - Sambungkan *Data Source* ke Prometheus (`http://prometheus:9090`) / (`http://localhost:9090`).
   - Buat *Dashboard* kustomisasi untuk memantau metrik dari Spring Boot Actuator, JVM memory, dan Database connection pool.
+
+  # Note Cek Health :
+  - (`http://localhost:9000/health`)
+  # Note Cek Metrics :
+  - (`http://localhost:9000/metrics`)
 
 
 # ⚠️ SOP PENGGUNAAN REPOSITORI GITHUB KELOMPOK 6 (WAJIB DIBACA & DIPATUHI) ⚠️
