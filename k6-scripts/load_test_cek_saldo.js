@@ -8,11 +8,15 @@ export const options = {
     duration: '1m',
 };
 
+const BASE_URL = 'http://host.docker.internal:9000/api/accounts/${accountId}'
 // --- SETUP: Login sekali untuk mendapatkan token JWT ---
 export function setup() {
     const payload = JSON.stringify({ username: 'nasabah_01', password: 'rahasia' });
     const params = { headers: { 'Content-Type': 'application/json' } };
-    const res = http.post('http://backend-api:9000/api/auth/login', payload, params);
+    const res = http.post(`${BASE_URL}api/auth/login`, payload, params);
+    console.log(res.status);
+    console.log(res.body);
+    
     const token = res.json('token');
     return { token: token };
 }
@@ -27,7 +31,7 @@ export default function (data) {
         },
     };
 
-    const res = http.get(`http://backend-api:9000/api/accounts/${accountId}`, params);
+    const res = http.get(`${BASE_URL}api/accounts/${accountId}`, params);
 
     check(res, {
         'status is 200': (r) => r.status === 200,

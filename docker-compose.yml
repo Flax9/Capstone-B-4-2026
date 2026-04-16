@@ -134,6 +134,16 @@ services:
       - api-net
     logging: *default-logging
 
+  influxdb:
+    image: influxdb:1.8
+    ports:
+      - "8086:8086"
+    environment:
+      - INFLUXDB_DB=k6
+    networks:
+      - api-net
+    logging: *default-logging
+
 networks:
   api-net:
     driver: bridge
