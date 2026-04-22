@@ -4,16 +4,28 @@ import { sleep, check } from 'k6';
 // Uji Latensi: API Cek Saldo (Read - via Redis Cache)
 // Target: mensimulasikan 100 user concurrent selama 1 menit
 export const options = {
-    vus: 100,
-    duration: '1m',
+    scenarios: {
+        uji_beban: {
+            executor: 'shared-iterations',
+            vus: 300,
+            iterations: 300000,
+            maxDuration: '30m',
+        },
+    },
 };
 
-const BASE_URL = 'http://host.docker.internal:9000/api/accounts/${accountId}'
+const BASE_URL = 'http://localhost:9000';
+
 // --- SETUP: Login sekali untuk mendapatkan token JWT ---
 export function setup() {
     const payload = JSON.stringify({ username: 'nasabah_01', password: 'rahasia' });
-    const params = { headers: { 'Content-Type': 'application/json' } };
-    const res = http.post(`${BASE_URL}api/auth/login`, payload, params);
+    const params = { 
+        headers: { 
+            'Content-Type': 'application/json',
+            'X-Test-Bypass': 'b7fc809a-super-secret-key-capstone'
+        } 
+    };
+    const res = http.post(`${BASE_URL}/api/auth/login`, payload, params);
     console.log(res.status);
     console.log(res.body);
     
@@ -28,15 +40,16 @@ export default function (data) {
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${data.token}`,
+            'X-Test-Bypass': 'b7fc809a-super-secret-key-capstone',
         },
     };
 
-    const res = http.get(`${BASE_URL}api/accounts/${accountId}`, params);
+    const res = http.get(`${BASE_URL}/api/accounts/${accountId}`, params);
 
     check(res, {
         'status is 200': (r) => r.status === 200,
         'latency < 200ms': (r) => r.timings.duration < 200, // Target lebih ketat karena ada Redis Cache
     });
 
-    sleep(1);
+    sleep(0.1);
 }

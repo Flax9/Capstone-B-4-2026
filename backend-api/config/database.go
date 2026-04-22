@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -39,7 +40,7 @@ func ConnectDatabase() {
 		Sources:  []gorm.Dialector{postgres.Open(masterDSN)},  // Untuk instruksi INSERT, UPDATE, DELETE
 		Replicas: []gorm.Dialector{postgres.Open(replicaDSN)}, // Spesialis instruksi membaca (SELECT)
 		Policy:   dbresolver.RandomPolicy{},
-	}))
+	}).SetMaxIdleConns(20).SetMaxOpenConns(80).SetConnMaxLifetime(time.Hour))
 
 	if err != nil {
 		log.Fatal("Gagal memasang DBResolver plugin: ", err)

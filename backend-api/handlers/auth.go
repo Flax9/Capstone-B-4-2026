@@ -81,8 +81,11 @@ func Login(c *fiber.Ctx) error {
 		auditLog.UserID = user.UserID
 	}
 
-	// Perintah GORM Create() => Menembus Rute MASTER Terdalam
-	config.DB.Create(&auditLog)
+	// Perintah GORM Create() Dieksekusi secara ASYNCHRONOUS (Golang Concurrency)
+	// Membiarkan I/O Disk berjalan di latar belakang agar Nasabah menerima JWT secara instan!
+	go func(logDb models.AuditLog) {
+		config.DB.Create(&logDb)
+	}(auditLog)
 
 	return c.Status(resStatus).JSON(payload)
 }

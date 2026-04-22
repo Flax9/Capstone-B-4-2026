@@ -68,10 +68,10 @@ INSERT INTO users (username, password_hash, full_name) VALUES
 ON CONFLICT (username) DO NOTHING;
 
 -- Menambah Data Rekening Master
--- Asumsi: Ambil UUID yang dihasilkan dari tabel users di atas
-INSERT INTO accounts (user_id, account_number, balance) VALUES 
-((SELECT user_id FROM users WHERE username = 'nasabah_01'), '1234567890', 5000000.00),
-((SELECT user_id FROM users WHERE username = 'nasabah_02'), '0987654321', 1000000.00)
+-- Sengaja dijahit (Hardcoded) UUID secara paksa untuk dicocokkan dengan skrip K6 Rafael
+INSERT INTO accounts (account_id, user_id, account_number, balance) VALUES 
+('924de2cf-e950-4f92-8e37-ae2eb7dda7e5', (SELECT user_id FROM users WHERE username = 'nasabah_01'), '1234567890', 5000000.00),
+('e3acd2bc-94d1-475e-ac7a-12fe405ad426', (SELECT user_id FROM users WHERE username = 'nasabah_02'), '0987654321', 1000000.00)
 ON CONFLICT (account_number) DO NOTHING;
 
 -- Menambah Contoh Data Transaksi Awal

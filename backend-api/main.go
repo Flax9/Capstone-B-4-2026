@@ -13,8 +13,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"github.com/ansrivas/fiberprometheus/v2"
 )
 
 func main() {
@@ -28,16 +27,13 @@ func main() {
 	})
 
 	// ==============================================
-	// 🧿 2A. SENSOR PROMETHEUS RAW NATIVE (TAHAP 4) 🧿
-	// Rute rahasia '/metrics' akan otomatis terbuat di sini untuk disedot Grafana.
-	// Memaksa pengeluaran (Export) seluruh data RAM, Garbage Collector (GC), dan Detak CPU murni 
-	// langsung dari mesin Golang menggunakan klien inti (Core Client) Prometheus.
+	// 🧿 2A. SENSOR PROMETHEUS + R.E.D METRICS (TAHAP 4) 🧿
+	// Menghubungkan middleware Fiber dengan Prometheus untuk menangkap metrik API
+	// (Requests per second, Error Rate, dan HTTP Duration/Latency)
 	// ==============================================
-	app.Get("/metrics", func(c *fiber.Ctx) error {
-		prometheusHandler := fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler())
-		prometheusHandler(c.Context())
-		return nil
-	})
+	prometheus := fiberprometheus.New("spring-boot-backend")
+	prometheus.RegisterAt(app, "/metrics")
+	app.Use(prometheus.Middleware)
 
 	// 3A. Menambahkan Terminal Logger agar request terlihat cantik di konsol
 	app.Use(logger.New(logger.Config{
@@ -48,6 +44,10 @@ func main() {
 	// 3B. Memasang Baju Zirah Pembatasan Kecepatan (Rate Limiter Anti-Spam / DDoS)
 	// Hanya mengizinkan maksimal 60 Panggilan HTTP selama rentang waktu 1 Menit dari IP yang sama.
 	app.Use(limiter.New(limiter.Config{
+		// Celah Pelolosan Otomatis untuk Mesin K6 Rafael (SRE Load Tester)
+		Next: func(c *fiber.Ctx) bool {
+			return c.Get("X-Test-Bypass") == "b7fc809a-super-secret-key-capstone"
+		},
 		Max:        60,
 		Expiration: 1 * time.Minute,
 		LimitReached: func(c *fiber.Ctx) error {

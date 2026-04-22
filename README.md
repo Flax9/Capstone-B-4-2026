@@ -104,7 +104,7 @@ Karena Windows PowerShell memiliki struktur pembacaan karakter tanda kutip tungg
 
 Pastikan Docker Services (Tier 2) sudah aktif dan berjalan. Buka aplikasi Terminal PowerShell, arahkan (CD) ke folder tempat `docker-compose.yml` berada, lalu ikuti urutan perintah ini:
 
-#### TAHAP 0 : Mengumpulkan UUID (Universally Unique Identifier)
+## TAHAP 0 : Mengumpulkan UUID (Universally Unique Identifier)
 Dikarenakan Endpoint Transfer dan Cek Saldo membutuhkan ID unik (account_id) bawaan Database dan bukan hanya angka rekening biasa demi keamanan.
 Tarik daftar UUID-nya secara paksa langsung dari instans kontainer PostgreSQL:
 ```
@@ -115,7 +115,7 @@ Dicatat dua UUID yang keluar dari tabel pada Terminal Anda. Variabel Asumsi:
 - UUID Pengirim (Akun 1): 924de2cf-e950-4f92-8e37-ae2eb7dda7e5
 - UUID Penerima (Akun 2): e3acd2bc-94d1-475e-ac7a-12fe405ad426
 
-#### TAHAP 1 : Autentikasi Sistem & Mencetak Token Kriptografi (JWT)
+## TAHAP 1 : Autentikasi Sistem & Mencetak Token Kriptografi (JWT)
 Harap catat, Token JWT Server Golang ini memiliki batas hangus waktu (Expired) *hanya 15 menit*. Oleh karena itu eksekusi Tahap 2 dan 3 wajib dilakukan pada saat Token ini baru dicetak.
 Jalankan deretan skrip PowerShell ini secara berurutan:
 
@@ -127,24 +127,24 @@ $headers = @{ "Authorization" = "Bearer $token" }
 Write-Host "Sesi JWT Aktif! Token Tersimpan: $token"
 ```
 
-#### TAHAP 2 : Ekstraksi Saldo Lapis Utama (Method GET)
+## TAHAP 2 : Ekstraksi Saldo Lapis Utama (Method GET)
 Karena variabel `$headers` (yang berisi Token Kunci) masih ada di rekam jejak memori PowerShell Anda, Anda bebas menembus Gateway tanpa ditolak.
 
-# Ganti dengan UUID yang didapat di Tahap 0
+### Ganti dengan UUID yang didapat di Tahap 0
 ```powershell
 $idAkunTarget = "924de2cf-e950-4f92-8e37-ae2eb7dda7e5" 
 ```
 
-# Kirim Request GET nya (Hanya Memerlukan URL & Headers)
+### Kirim Request GET nya (Hanya Memerlukan URL & Headers) Guna melihat status akun seperti sisa saldo
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:9000/api/accounts/$idAkunTarget" -Method GET -Headers $headers | ConvertTo-Json -Depth 5
 ```
 
-#### TAHAP 3 : Simulasi Transaksi Mutasi Rekening Terkunci (Method POST)
+## TAHAP 3 : Simulasi Transaksi Mutasi Rekening Terkunci (Method POST)
 Lakukan instruksi POST dengan menyematkan formulir pengiriman saldo secara dinamis melalui parameter yang dikonversi menjadi format standar web murni (JSON):
 
-# Rakit Payload Body Transaksi dengan aman fungsi transfer uang
-# Payload konfig
+### Rakit Payload Body Transaksi dengan aman fungsi transfer uang
+### Payload konfig
 ```powershell
 $bodyMutasi = @{ 
     from_account_id = "924de2cf-e950-4f92-8e37-ae2eb7dda7e5";    # UUID Pengirim
@@ -153,9 +153,30 @@ $bodyMutasi = @{
 } | ConvertTo-Json
 ```
 
-# Kirim Request (POST) guna mentransfer uang
+### Kirim Request (POST) guna mentransfer uang
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:9000/api/transactions/transfer" -Method POST -Body $bodyMutasi -ContentType "application/json" -Headers $headers
+```
+
+## 🧨 Protokol Evaluasi Ketahanan (SRE Load Testing - K6)
+Arsitektur API ini sejatinya secara gagah dilindungi oleh perisai anti DDoS (`Rate-Limiter` 60 request/menit). Jika pengujian beban *(Load Testing)* dilesatkan secara telanjang, API Golang akan menampar balik laju `k6` dengan pesan peringatan `HTTP 429 Too Many Requests`.
+
+Guna mendobrak pembatas tersebut khusus di lingkungan akademis/pengujian, prosedur injeksi tim SRE telah digawangi oleh protokol **Manajemen Jalur Retas (Testing Bypass Route)**:
+1. **Prediktabilitas UUID (Account Seeding):** Skema inisialisasi basis data (`01-init.sql`) telah dijahit paku *(hardcoded)* dengan dua kantong UUID identitas (*Account ID*) statis: `924de2cf...` dan `e3acd2bc...`. Rekayasa ini memustahilkan munculnya insiden rekaman hilang `404 Not Found` setiap kali purwarupa SRE direstart secara persisten.
+2. **Sandi V.I.P Pelolosan Pertahanan:** Seluruh selongsong armada `k6-scripts/*.js` dipersenjatai dengan penyuntik rahasia *HTTP Header* bernilai `X-Test-Bypass: b7fc809a-super-secret-key-capstone`. Selama `k6` bersenandungkan kalimat sandi magis ini, sang *Rate-Limiter* Golang akan menunduk dan membiarkan puluhan ribu permohonan lewat tak terbatas; sambil murni mengunci serangan penyerang asing publik yang tidak tahu sandi tersebut!
+
+### Skema Pemantik Senjata K6 (Native Windows Host)
+Lakukan pendobrakan peluru skenario latensi secara asali dari Command Prompt atau PowerShell Anda (Dengan prasyarat instalasi murni `winget install k6`):
+
+```powershell
+# ✅ Uji Subsistem I/O Disk & Pembangkitan JWT (Auth Login)
+k6 run k6-scripts\load_test_login.js
+
+# ✅ Uji Pembebanan Subsistem Baca Cepat (Redis Cache Target)
+k6 run k6-scripts\load_test_cek_saldo.js
+
+# ✅ Uji Penyiksaan Subsistem Tulis Ekstrem (Postgres ACID Master)
+k6 run k6-scripts\load_test_transfer.js
 ```
 ---
 
@@ -179,9 +200,9 @@ Saat ini, *Boilerplate* infrastruktur sudah menyala sempurna menggunakan kontain
   - Ganti file `database-init/01-init-dummy.sql` dengan skema DDL (Data Definition Language) PostgreSQL yang sebenarnya.
   - Setiap kali ada *table* atau relasi baru, silakan tambahkan file bereksistensi `.sql` di folder tersebut (contoh: `02-insert-master-data.sql`).
 
-- **Rafael (Load Testing)**:
-  - Eksekusi skrip K6. Ubah isi `k6-scripts/dummy-load-test.js` dengan berbagai skenario stress testing/load testing (misal: simulasi 30.000 transaksi login/transfer per jam).
-  - Anda bisa membuat file test `.js` baru jika skenarionya banyak, lalu sesuaikan argumen pemanggilannya di terminal.
+- ~~**Rafael (Load Testing)**~~ *(STATUS: SELESAI)*:
+  - ~~Gubahan struktur ID persisten pada inisialisator basis data dan injeksi selubung saklar pintu pelolosan *Rate-Limiter* telah diimplementasikan.~~
+  - ~~Tiga skenario pengujian paripurna K6 (I/O Login, Membaca Cepat Redis, dan Tulis Ekstrem Master) terbukti absolut berhasil memuntahkan iterasi tanpa celah kemacetan di target milidetik SRE SLO yang menawan.~~
 
 - **Ego & Vanessa (Monitoring)**:
   - Buka *Dashboard* Grafana di `http://localhost:3000`.
