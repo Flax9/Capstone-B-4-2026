@@ -188,6 +188,16 @@ Merespons standar akademik ketat untuk purwarupa layanan perbankan, infrastruktu
 
 ---
 
+## 📝 Changelog (Pembaruan Terbaru)
+
+**[06 Mei 2026] - Implementasi Envoy Proxy & Load Balancer**
+- 🚀 **Penambahan Envoy Proxy**: Arsitektur kini menggunakan Envoy sebagai pintu masuk utama (*API Gateway* & *Load Balancer*).
+- ⚖️ **Skalabilitas Backend**: Layanan `backend-api` tidak lagi diakses langsung secara publik (port 9000 dipindahkan ke Envoy) dan dikonfigurasi untuk secara asali berjalan sebanyak 3 instance (*replicas*). Envoy mendistribusikan lalu lintas secara merata dengan algoritma *Round Robin*.
+- 📊 **Monitoring Lanjutan**: Konfigurasi Prometheus diperbarui menggunakan `dns_sd_configs` untuk secara presisi mendeteksi dan memantau 3 instance `backend-api` sekaligus, serta mengekstraksi metrik bawaan dari port admin Envoy (`9901`).
+- 🚦 **K6 Load Testing Terpadu**: Penambahan skrip `k6-scripts/load_test_combined.js` yang memborbardir sistem dengan 1 juta iterasi request secara acak (Login, Cek Saldo, Transfer) untuk menguji ketahanan Envoy dan *cluster backend* secara serentak.
+
+---
+
 ## 🎯 Target Pekerjaan Selanjutnya (To-Do List Tim)
 
 Saat ini, *Boilerplate* infrastruktur sudah menyala sempurna menggunakan kontainer *dummy/placeholders*. Berikut adalah hal yang perlu dilakukan oleh masing-masing PIC agar sistem ini menjadi *Real Application*:

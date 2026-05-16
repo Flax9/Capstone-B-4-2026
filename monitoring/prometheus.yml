@@ -6,7 +6,28 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  - job_name: 'spring-boot-backend'
+  - job_name: 'auth-service'
     metrics_path: '/metrics'
+    dns_sd_configs:
+      - names: ['auth-service']
+        type: A
+        port: 9001
+
+  - job_name: 'balance-service'
+    metrics_path: '/metrics'
+    dns_sd_configs:
+      - names: ['balance-service']
+        type: A
+        port: 9002
+
+  - job_name: 'transaction-service'
+    metrics_path: '/metrics'
+    dns_sd_configs:
+      - names: ['transaction-service']
+        type: A
+        port: 9003
+
+  - job_name: 'envoy'
+    metrics_path: '/stats/prometheus'
     static_configs:
-      - targets: ['backend-api:9000']
+      - targets: ['envoy:9901']

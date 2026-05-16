@@ -6,10 +6,13 @@ import { sleep, check } from 'k6';
 export const options = {
     scenarios: {
         uji_beban_gabungan: {
-            executor: 'shared-iterations',
-            vus: 300,
-            iterations: 1000000, // Total 1 juta iterasi
-            maxDuration: '60m',  // Sesuaikan jika butuh waktu lebih lama
+            // Menggunakan executor khusus untuk mematok kecepatan (Rate) yang konstan
+            executor: 'constant-arrival-rate',
+            rate: 1000000,          // Target: 1.000.000 request
+            timeUnit: '1m',         // Dalam waktu: 1 menit
+            duration: '1m',         // Durasi tes berjalan selama 1 menit
+            preAllocatedVUs: 3000,  // Pasukan awal dinaikkan dua kali lipat
+            maxVUs: 10000,          // Pasukan cadangan dinaikkan mentok ke 10.000 VUs
         },
     },
 };
@@ -19,21 +22,21 @@ const BASE_URL = 'http://localhost:9000';
 // --- SETUP: Login sekali untuk mendapatkan token JWT untuk request yang butuh auth ---
 export function setup() {
     const payload = JSON.stringify({ username: 'nasabah_01', password: 'rahasia' });
-    const params = { 
-        headers: { 
+    const params = {
+        headers: {
             'Content-Type': 'application/json',
             'X-Test-Bypass': 'b7fc809a-super-secret-key-capstone'
-        } 
+        }
     };
     const res = http.post(`${BASE_URL}/api/auth/login`, payload, params);
-    
+
     let token = '';
     if (res.status === 200) {
         token = res.json('token');
     } else {
         console.error('Setup failed: Login error');
     }
-    
+
     return { token: token };
 }
 
@@ -64,7 +67,7 @@ export default function (data) {
 
     } else if (rand < 0.66) {
         // 2. API Cek Saldo
-        const accountId = '924de2cf-e950-4f92-8e37-ae2eb7dda7e5'; 
+        const accountId = '924de2cf-e950-4f92-8e37-ae2eb7dda7e5';
 
         const params = {
             headers: {
@@ -78,15 +81,15 @@ export default function (data) {
 
         check(res, {
             'cek_saldo status is 200': (r) => r.status === 200,
-            'cek_saldo latency < 200ms': (r) => r.timings.duration < 200, 
+            'cek_saldo latency < 200ms': (r) => r.timings.duration < 200,
         });
 
     } else {
         // 3. API Transfer
         const payload = JSON.stringify({
-            from_account_id: '924de2cf-e950-4f92-8e37-ae2eb7dda7e5', 
-            to_account_id:   'e3acd2bc-94d1-475e-ac7a-12fe405ad426', 
-            amount:          10, // Nominal lebih kecil agar saldo bertahan lebih lama saat load test besar
+            from_account_id: '924de2cf-e950-4f92-8e37-ae2eb7dda7e5',
+            to_account_id: 'e3acd2bc-94d1-475e-ac7a-12fe405ad426',
+            amount: 10, // Nominal lebih kecil agar saldo bertahan lebih lama saat load test besar
         });
 
         const params = {
@@ -100,8 +103,8 @@ export default function (data) {
         const res = http.post(`${BASE_URL}/api/transactions/transfer`, payload, params);
 
         check(res, {
-            'transfer status is 200': (r) => r.status === 200,
-            'transfer latency < 1000ms': (r) => r.timings.duration < 1000, 
+            'transfer status is 202': (r) => r.status === 202,
+            'transfer latency < 1000ms': (r) => r.timings.duration < 1000,
         });
     }
 

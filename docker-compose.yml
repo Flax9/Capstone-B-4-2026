@@ -8,6 +8,37 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
+  # ============================================================
+  # 📨 ZOOKEEPER + KAFKA: Message Broker untuk Async Transfer
+  # ============================================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - data-net
+    logging: *default-logging
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - data-net
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    logging: *default-logging
+
   postgres-master:
     image: bitnami/postgresql:latest
     ports:
@@ -58,6 +89,65 @@ services:
       retries: 5
     logging: *default-logging
 
+  # ==========================================================
+  # 🔵 PGBOUNCER: Connection Pooler di depan PostgreSQL Master
+  # Mode 'transaction' membebaskan koneksi setelah setiap transaksi selesai,
+  # sehingga 3 container Golang (x25 koneksi) = 75 koneksi total yang diteruskan
+  # sebagai hanya ~75 koneksi stabil ke PostgreSQL Master.
+  # ==========================================================
+  pgbouncer-master:
+    image: edoburu/pgbouncer:latest
+    environment:
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_HOST=postgres-master
+      - DB_PORT=5432
+      - DB_NAME=capstonev2
+      - LISTEN_PORT=6432
+      - POOL_MODE=transaction
+      - MAX_CLIENT_CONN=5000
+      - DEFAULT_POOL_SIZE=100
+      - AUTH_TYPE=scram-sha-256
+    networks:
+      - data-net
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 -U user || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  # ==========================================================
+  # 🟢 PGBOUNCER: Connection Pooler di depan PostgreSQL Replica
+  # ==========================================================
+  pgbouncer-replica:
+    image: edoburu/pgbouncer:latest
+    environment:
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_HOST=postgres-replica
+      - DB_PORT=5432
+      - DB_NAME=capstonev2
+      - LISTEN_PORT=6432
+      - POOL_MODE=transaction
+      - MAX_CLIENT_CONN=5000
+      - DEFAULT_POOL_SIZE=100
+      - AUTH_TYPE=scram-sha-256
+    networks:
+      - data-net
+    depends_on:
+      postgres-replica:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 -U user || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
   redis-cache:
     image: redis:7-alpine
     command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
@@ -72,34 +162,171 @@ services:
       retries: 5
     logging: *default-logging
 
-  backend-api:
+  # ============================================================
+  # 🔑 AUTH SERVICE: Layanan Autentikasi & JWT (Port 9001)
+  # ============================================================
+  auth-service:
     build:
-      context: ./backend-api
+      context: ./auth-service
       dockerfile: Dockerfile
-    ports:
-      - "9000:9000"
-    environment: 
-      - DB_MASTER_HOST=postgres-master
-      - DB_MASTER_PORT=5432
-      - DB_REPLICA_HOST=postgres-replica
-      - DB_REPLICA_PORT=5432
+    environment:
+      - DB_MASTER_HOST=pgbouncer-master
+      - DB_MASTER_PORT=6432
+      - DB_REPLICA_HOST=pgbouncer-replica
+      - DB_REPLICA_PORT=6432
+      - KAFKA_BROKER=kafka:9092
+    networks:
+      - api-net
+      - data-net
+    depends_on:
+      pgbouncer-master:
+        condition: service_healthy
+      pgbouncer-replica:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M # Naik dari 256M
+    logging: *default-logging
+
+  # ============================================================
+  # ⚖️ AUDIT WORKER: Memindahkan Audit Log dari Kafka ke DB
+  # ============================================================
+  audit-worker:
+    build:
+      context: ./audit-worker
+      dockerfile: Dockerfile
+    environment:
+      - DB_MASTER_HOST=pgbouncer-master
+      - DB_MASTER_PORT=6432
+      - KAFKA_BROKER=kafka:9092
+    networks:
+      - data-net
+    depends_on:
+      pgbouncer-master:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    logging: *default-logging
+
+
+  # ============================================================
+  # 💰 BALANCE SERVICE: Layanan Cek Saldo via Redis & Replica (Port 9002)
+  # ============================================================
+  balance-service:
+    build:
+      context: ./balance-service
+      dockerfile: Dockerfile
+    environment:
+      - DB_MASTER_HOST=pgbouncer-master
+      - DB_MASTER_PORT=6432
+      - DB_REPLICA_HOST=pgbouncer-replica
+      - DB_REPLICA_PORT=6432
       - REDIS_HOST=redis-cache
       - REDIS_PORT=6379
     networks:
       - api-net
       - data-net
     depends_on:
-      postgres-master:
+      pgbouncer-master:
         condition: service_healthy
-      postgres-replica:
+      pgbouncer-replica:
         condition: service_healthy
       redis-cache:
         condition: service_healthy
     deploy:
+      replicas: 3
       resources:
         limits:
-          cpus: '1.5'
-          memory: 1.5G
+          cpus: '0.5'
+          memory: 512M # Naik dari 256M
+    logging: *default-logging
+
+  # ============================================================
+  # 💸 TRANSACTION SERVICE: Layanan Transfer ACID ke Master (Port 9003)
+  # ============================================================
+  transaction-service:
+    build:
+      context: ./transaction-service
+      dockerfile: Dockerfile
+    environment:
+      - DB_MASTER_HOST=pgbouncer-master
+      - DB_MASTER_PORT=6432
+      - DB_REPLICA_HOST=pgbouncer-replica
+      - DB_REPLICA_PORT=6432
+      - REDIS_HOST=redis-cache
+      - REDIS_PORT=6379
+    networks:
+      - api-net
+      - data-net
+    depends_on:
+      pgbouncer-master:
+        condition: service_healthy
+      pgbouncer-replica:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G # Naik dari 512M
+    logging: *default-logging
+
+  # ============================================================
+  # ⚙️ TRANSACTION WORKER: Konsumen Kafka yang Eksekusi ACID ke DB
+  # Berjalan di belakang layar, tidak terekspos ke publik
+  # ============================================================
+  transaction-worker:
+    build:
+      context: ./transaction-worker
+      dockerfile: Dockerfile
+    environment:
+      - DB_MASTER_HOST=pgbouncer-master
+      - DB_MASTER_PORT=6432
+      - DB_REPLICA_HOST=pgbouncer-replica
+      - DB_REPLICA_PORT=6432
+      - REDIS_HOST=redis-cache
+      - REDIS_PORT=6379
+      - KAFKA_BROKER=kafka:9092
+    networks:
+      - data-net
+    depends_on:
+      pgbouncer-master:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M # Naik dari 256M
+    logging: *default-logging
+
+  envoy:
+    image: envoyproxy/envoy:v1.27-latest
+    ports:
+      - "9000:8080"
+      - "9901:9901"
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    networks:
+      - api-net
+    depends_on:
+      - auth-service
+      - balance-service
+      - transaction-service
+
     logging: *default-logging
 
   prometheus:
