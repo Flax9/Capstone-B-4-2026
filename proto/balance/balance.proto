@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package balance;
+
+option go_package = "capstone/proto/balance";
+
+service BalanceService {
+  rpc CheckBalance(BalanceRequest) returns (BalanceResponse) {}
+}
+
+message BalanceRequest {
+  string user_id = 1; // Diambil dari token JWT oleh API Gateway atau middleware
+}
+
+message BalanceResponse {
+  int32 status_code = 1;
+  string message = 2;
+  double current_balance = 3;
+  string account_number = 4;
+}

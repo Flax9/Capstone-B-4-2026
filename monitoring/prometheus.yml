@@ -6,7 +6,14 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  - job_name: 'spring-boot-backend'
-    metrics_path: '/metrics'
+  - job_name: 'auth-service'
     static_configs:
-      - targets: ['backend-api:9000']
+      - targets: ['auth-service:2112']
+
+  - job_name: 'balance-service'
+    static_configs:
+      - targets: ['balance-service:2112']
+
+  - job_name: 'transaction-service'
+    static_configs:
+      - targets: ['transaction-service:2112']

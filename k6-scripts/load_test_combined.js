@@ -1,109 +1,81 @@
-import http from 'k6/http';
-import { sleep, check } from 'k6';
+import grpc from 'k6/net/grpc';
+import { check } from 'k6';
 
-// Uji Latensi Gabungan: API Login, Cek Saldo, dan Transfer
-// Target: mensimulasikan total 1.000.000 iterasi yang dipilih secara random
+// Instansiasi 3 Klien gRPC
+const clientAuth = new grpc.Client();
+const clientBalance = new grpc.Client();
+const clientTrx = new grpc.Client();
+
+// Muat kontrak Protocol Buffers
+// Path absolut /proto/ agar bisa bekerja di dalam Docker container
+clientAuth.load(['/proto/auth'], 'auth.proto');
+clientBalance.load(['/proto/balance'], 'balance.proto');
+clientTrx.load(['/proto/transaction'], 'transaction.proto');
+
 export const options = {
     scenarios: {
         uji_beban_gabungan: {
-            executor: 'shared-iterations',
-            vus: 300,
-            iterations: 1000000, // Total 1 juta iterasi
-            maxDuration: '60m',  // Sesuaikan jika butuh waktu lebih lama
+            executor: 'constant-arrival-rate',
+            rate: 300000,          // Target: 1.000.000 request
+            timeUnit: '1m',
+            duration: '2m',
+            preAllocatedVUs: 3000,
+            maxVUs: 10000,
         },
     },
 };
 
-const BASE_URL = 'http://localhost:9000';
+// State per-VU untuk memastikan koneksi TCP persisten (Multiplexing)
+let connected = false;
 
-// --- SETUP: Login sekali untuk mendapatkan token JWT untuk request yang butuh auth ---
-export function setup() {
-    const payload = JSON.stringify({ username: 'nasabah_01', password: 'rahasia' });
-    const params = { 
-        headers: { 
-            'Content-Type': 'application/json',
-            'X-Test-Bypass': 'b7fc809a-super-secret-key-capstone'
-        } 
-    };
-    const res = http.post(`${BASE_URL}/api/auth/login`, payload, params);
-    
-    let token = '';
-    if (res.status === 200) {
-        token = res.json('token');
-    } else {
-        console.error('Setup failed: Login error');
+export default function () {
+    // Hanya buka 1 koneksi per Virtual User seumur hidup (menghindari port exhaustion)
+    if (!connected) {
+        const targetHost = __ENV.TARGET_HOST || 'localhost';
+        clientAuth.connect(`${targetHost}:9001`, { plaintext: true });
+        clientBalance.connect(`${targetHost}:9002`, { plaintext: true });
+        clientTrx.connect(`${targetHost}:9003`, { plaintext: true });
+        connected = true;
     }
-    
-    return { token: token };
-}
 
-export default function (data) {
-    // Generate angka random antara 0 dan 1
     const rand = Math.random();
 
     if (rand < 0.33) {
-        // 1. API Login
-        const payload = JSON.stringify({
+        // 1. gRPC Login
+        const response = clientAuth.invoke('auth.AuthService/Login', {
             username: 'nasabah_01',
-            password: 'rahasia',
+            password: 'rahasia'
         });
 
-        const params = {
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Test-Bypass': 'b7fc809a-super-secret-key-capstone'
-            },
-        };
-
-        const res = http.post(`${BASE_URL}/api/auth/login`, payload, params);
-
-        check(res, {
-            'login status is 200': (r) => r.status === 200,
-            'login latency < 500ms': (r) => r.timings.duration < 500,
+        check(response, {
+            'login status is OK': (r) => r && r.status === grpc.StatusOK,
+            'login code is 200': (r) => r && r.message && r.message.statusCode === 200,
         });
 
     } else if (rand < 0.66) {
-        // 2. API Cek Saldo
-        const accountId = '924de2cf-e950-4f92-8e37-ae2eb7dda7e5'; 
+        // 2. gRPC Cek Saldo
+        const response = clientBalance.invoke('balance.BalanceService/CheckBalance', {
+            userId: '924de2cf-e950-4f92-8e37-ae2eb7dda7e5'
+        });
 
-        const params = {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${data.token}`,
-                'X-Test-Bypass': 'b7fc809a-super-secret-key-capstone',
-            },
-        };
-
-        const res = http.get(`${BASE_URL}/api/accounts/${accountId}`, params);
-
-        check(res, {
-            'cek_saldo status is 200': (r) => r.status === 200,
-            'cek_saldo latency < 200ms': (r) => r.timings.duration < 200, 
+        check(response, {
+            'cek_saldo status is OK': (r) => r && r.status === grpc.StatusOK,
+            'cek_saldo code is 200': (r) => r && r.message && r.message.statusCode === 200,
         });
 
     } else {
-        // 3. API Transfer
-        const payload = JSON.stringify({
-            from_account_id: '924de2cf-e950-4f92-8e37-ae2eb7dda7e5', 
-            to_account_id:   'e3acd2bc-94d1-475e-ac7a-12fe405ad426', 
-            amount:          10, // Nominal lebih kecil agar saldo bertahan lebih lama saat load test besar
+        // 3. gRPC Transfer
+        const response = clientTrx.invoke('transaction.TransactionService/Transfer', {
+            senderId: '924de2cf-e950-4f92-8e37-ae2eb7dda7e5',
+            targetAccount: 'e3acd2bc-94d1-475e-ac7a-12fe405ad426',
+            amount: 10
         });
 
-        const params = {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${data.token}`,
-                'X-Test-Bypass': 'b7fc809a-super-secret-key-capstone',
-            },
-        };
-
-        const res = http.post(`${BASE_URL}/api/transactions/transfer`, payload, params);
-
-        check(res, {
-            'transfer status is 200': (r) => r.status === 200,
-            'transfer latency < 1000ms': (r) => r.timings.duration < 1000, 
+        check(response, {
+            'transfer status is OK': (r) => r && r.status === grpc.StatusOK,
+            'transfer code is 202': (r) => r && r.message && r.message.statusCode === 202,
         });
     }
 
-    sleep(0.1);
+    // Tidak ada pemanggilan client.close() agar koneksi tetap persisten!
 }

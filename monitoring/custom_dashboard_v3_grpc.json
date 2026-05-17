@@ -14,7 +14,7 @@
       "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "type": "row",
-      "title": "🔴 R.E.D Metrics (API Gateway Performance)"
+      "title": "🔴 R.E.D Metrics (gRPC Core Performance)"
     },
     {
       "datasource": {
@@ -28,7 +28,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(http_requests_total[1m]))",
+          "expr": "sum(rate(grpc_server_handled_total[1m]))",
           "legendFormat": "Requests per second"
         }
       ]
@@ -40,12 +40,12 @@
       },
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
       "id": 2,
-      "title": "Error Rate (HTTP 4xx & 5xx)",
+      "title": "Error Rate (Non-OK gRPC Codes)",
       "type": "timeseries",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(http_requests_total{status=~\"[45].*\"}[1m]))",
+          "expr": "sum(rate(grpc_server_handled_total{grpc_code!=\"OK\"}[1m]))",
           "legendFormat": "Errors per second"
         }
       ]
@@ -62,7 +62,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[1m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket[1m])) by (le))",
           "legendFormat": "P95 Latency (s)"
         }
       ]
@@ -75,7 +75,7 @@
       "gridPos": { "h": 5, "w": 24, "x": 0, "y": 9 },
       "id": 102,
       "type": "row",
-      "title": "⚖️ Envoy Load Balancer Traffic Distribution"
+      "title": "⚖️ gRPC Service Traffic Distribution"
     },
     {
       "datasource": {
@@ -84,13 +84,13 @@
       },
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 10 },
       "id": 6,
-      "title": "Requests per Second by Replica",
+      "title": "Requests per Second by Service",
       "type": "timeseries",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum by (instance) (rate(http_requests_total[1m]))",
-          "legendFormat": "{{instance}}"
+          "expr": "sum by (job) (rate(grpc_server_handled_total[1m]))",
+          "legendFormat": "{{job}}"
         }
       ]
     },
@@ -152,6 +152,6 @@
     ]
   },
   "time": { "from": "now-30m", "to": "now" },
-  "title": "Banking Core Dashboard V2",
+  "title": "Banking Core Dashboard V3 (gRPC Hyper-Scale)",
   "version": 1
 }

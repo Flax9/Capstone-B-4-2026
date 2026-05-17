@@ -31,3 +31,14 @@ target/
 *.csv
 *report.html
 *summary.json
+
+# Go Workspace (auto-generated, setiap dev punya versi sendiri)
+go.work.sum
+
+# Temporary Build Artifacts
+tmp*.exe
+fix_dockerfiles*.ps1
+
+# Go Compiled Binaries (output dari 'go build -o server')
+**/server
+!**/server/
