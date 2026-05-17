@@ -150,6 +150,12 @@ Capstone-B-4-2026/
 │   ├── load_test_cek_saldo.js #   Test khusus Cek Saldo
 │   └── load_test_transfer.js  #   Test khusus Transfer
 │
+├── shared/                    # Shared gRPC Interceptors
+│   └── interceptors/
+│       ├── ratelimit.go       #   Rate Limiter (Redis sliding window)
+│       ├── circuitbreaker.go  #   Circuit Breaker (sony/gobreaker)
+│       └── tracing.go         #   Tracing ID (UUID per request)
+│
 ├── database-init/             # SQL Inisialisasi Database
 │   └── 01-init.sql
 │
@@ -236,6 +242,9 @@ docker-compose --profile testing run --rm k6-loadtester run /scripts/load_test_c
 - **Event-Driven Processing** — Transaksi mutasi diproses secara asinkron melalui Kafka, menghilangkan *write-blocking* pada database.
 - **Cache-Aside Pattern** — Redis digunakan sebagai lapisan pembacaan cepat pada Auth dan Balance service (TTL 60 detik).
 - **L4 Load Balancing** — HAProxy mendistribusikan traffic TCP secara merata ke semua replika tanpa overhead inspeksi HTTP.
+- **Rate Limiting** — Pembatasan jumlah request per IP per menit menggunakan Redis sliding window counter. Auth: 1000/min, Balance: 2000/min, Transaction: 500/min.
+- **Circuit Breaker** — Proteksi cascading failure menggunakan `sony/gobreaker`. Circuit terbuka otomatis jika ≥50% request gagal, mencegah beban ke database yang sedang *overloaded*.
+- **Distributed Tracing** — Setiap request diberi UUID unik (`X-Trace-ID`) yang dipropagasi via gRPC metadata dan dicetak di setiap log untuk korelasi antar-service.
 - **Static IP Networking** — Subnet Docker tetap (`172.25.0.0/16`) dengan IP statis pada HAProxy untuk menghindari kegagalan DNS.
 - **Connection Pooling** — PgBouncer mengelola pool koneksi ke PostgreSQL agar tidak terjadi *connection exhaustion*.
 - **gRPC Histogram Metrics** — Setiap service mengekspos metrik latensi melalui sidecar HTTP (:2112) untuk di-*scrape* Prometheus.
@@ -267,7 +276,10 @@ git checkout -b feature/nama-fitur
 
 ## 📝 Changelog
 
-**[17 Mei 2026] — Optimalisasi Performa & Stabilitas Load Testing**
+**[17 Mei 2026] — Proteksi Peak Load & Observability**
+- 🛡️ Implementasi **Rate Limiting** (Redis sliding window) pada seluruh gRPC service.
+- 🔌 Implementasi **Circuit Breaker** (`sony/gobreaker`) untuk mencegah cascading failure.
+- 🔍 Implementasi **Tracing ID** (UUID per request) untuk korelasi log antar-service.
 - 🔧 Implementasi **Redis Cache-Aside** pada `auth-service` — mengurangi beban SQL repetitif hingga 99%.
 - 🌐 Konfigurasi **Static IP** (`172.25.0.100`) pada HAProxy untuk bypass DNS Docker.
 - ⏱️ Penambahan **warm-up delay** (5 detik) pada K6 container untuk stabilitas jaringan.
