@@ -39,8 +39,8 @@ Pastikan perangkat Anda sudah terinstal software berikut **sebelum memulai**:
 
 | Komponen | Minimum | Rekomendasi |
 |----------|---------|-------------|
-| **RAM** | 8 GB | 16 GB |
-| **CPU** | 4 Core | 8 Core |
+| **RAM** | 8 GB | 32 GB |
+| **CPU** | 6 Core | 16 Core |
 | **Disk** | 10 GB kosong | 20 GB kosong |
 | **OS** | Windows 10/11, macOS, Linux | Windows 11 + WSL2 |
 
@@ -54,13 +54,11 @@ Buka terminal (PowerShell / Command Prompt / Terminal) dan jalankan:
 
 ```bash
 # Clone repository
-git clone <URL_REPOSITORY_ANDA> capstone-grpc
+git clone https://github.com/Flax9/Capstone-B-4-2026.git capstone-grpc
 
 # Masuk ke direktori proyek
 cd capstone-grpc
 ```
-
-> 📌 Ganti `<URL_REPOSITORY_ANDA>` dengan URL GitHub/GitLab proyek ini.
 
 ### Struktur Direktori Proyek
 
