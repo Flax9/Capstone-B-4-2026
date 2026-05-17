@@ -137,6 +137,63 @@
           "legendFormat": "Bytes Allocated"
         }
       ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 27 },
+      "id": 200,
+      "type": "row",
+      "title": "🛡️ Circuit Breaker & Rate Limiter"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "id": 201,
+      "title": "Circuit Breaker State (0=Closed, 1=Half-Open, 2=Open)",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 2,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 2 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "circuit_breaker_state",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "id": 202,
+      "title": "Circuit Breaker Rejections (req/s)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (service) (rate(circuit_breaker_rejections_total[1m]))",
+          "legendFormat": "{{service}}"
+        }
+      ]
     }
   ],
   "schemaVersion": 39,
