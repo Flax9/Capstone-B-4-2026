@@ -43,11 +43,20 @@ func (s *AuthServer) Login(ctx context.Context, req *pb.LoginRequest) (*pb.Login
 		fmt.Printf("[auth-service] Redis Get Error: %v\n", err)
 	}
 
-	// 2. CACHE MISS => Query ke Replica PostgreSQL
+	// 2. CACHE MISS => Query ke Replica PostgreSQL (timeout 3 detik)
 	if !userFound {
-		dbErr := config.DB.WithContext(ctx).Where("username = ?", req.Username).First(&user).Error
+		queryCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+
+		dbErr := config.DB.WithContext(queryCtx).Where("username = ?", req.Username).First(&user).Error
 		if dbErr != nil {
-			userFound = false
+			// Bedakan: "record not found" (normal) vs error koneksi DB (fatal)
+			if dbErr.Error() == "record not found" {
+				userFound = false
+			} else {
+				// Error koneksi DB / timeout → return gRPC error agar circuit breaker terpicu
+				return nil, fmt.Errorf("database error: %v", dbErr)
+			}
 		} else {
 			userFound = true
 			// 3. Populate Cache (TTL 60 detik)

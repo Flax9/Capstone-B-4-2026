@@ -14,9 +14,10 @@ Panduan ini menjelaskan langkah-langkah **dari awal hingga load testing** untuk 
 6. [Mengakses Dashboard Monitoring](#6--mengakses-dashboard-monitoring)
 7. [Menjalankan Load Testing](#7--menjalankan-load-testing)
 8. [Membaca Hasil Load Test](#8--membaca-hasil-load-test)
-9. [Menghentikan Sistem](#9--menghentikan-sistem)
-10. [Troubleshooting](#10--troubleshooting)
-11. [Arsitektur Sistem](#11--arsitektur-sistem)
+9. [Menguji Proteksi Beban Puncak](#9--menguji-proteksi-beban-puncak)
+10. [Menghentikan Sistem](#10--menghentikan-sistem)
+11. [Troubleshooting](#11--troubleshooting)
+12. [Arsitektur Sistem](#12--arsitektur-sistem)
 
 ---
 
@@ -187,7 +188,16 @@ docker logs capstone-auth-service-1 --tail 20
 docker logs capstone-haproxy-1 --tail 10
 ```
 
-Log yang sehat untuk HAProxy akan menampilkan:
+Log yang sehat untuk **auth-service** akan menampilkan:
+```
+[auth-service] Terhubung ke PostgreSQL via PgBouncer!
+[auth-service] Kafka producer (Audit) terhubung ke kafka:9092
+[auth-service] Terhubung ke Redis!
+Prometheus metrics tersedia di :2112/metrics
+Auth Service (gRPC) berjalan di port 9001 [Rate Limit: 1000 req/min]
+```
+
+Log yang sehat untuk **HAProxy** akan menampilkan:
 ```
 Server auth_back/auth1 ('auth-service') is UP/READY (resolves again).
 Server auth_back/auth2 ('auth-service') is UP/READY (resolves again).
@@ -230,6 +240,10 @@ Anda akan melihat dashboard dengan panel-panel:
 - **gRPC Request Rate** (request/detik)
 - **gRPC P95 Latency** (histogram latensi persentil ke-95)
 - **gRPC Error Rate** (persentase error)
+- **Requests per Second by Service** (distribusi traffic antar-service)
+- **Golang Active Goroutines** & **Heap Memory** (runtime metrics)
+- **Circuit Breaker State** (0=Closed/Hijau, 1=Half-Open/Kuning, 2=Open/Merah)
+- **Circuit Breaker Rejections** (request/detik yang ditolak CB)
 
 > 💡 Data akan mulai muncul di dashboard setelah Anda menjalankan load test di langkah berikutnya.
 
@@ -318,7 +332,73 @@ Jika Anda melihat angka `dropped_iterations` yang besar, **jangan khawatir** —
 
 ---
 
-## 9. 🛑 Menghentikan Sistem
+## 9. 🛡️ Menguji Proteksi Beban Puncak
+
+Sistem ini dilengkapi 3 lapisan proteksi yang dipasang sebagai **gRPC Interceptor Chain**:
+
+```
+Request → Rate Limiter → Circuit Breaker → Tracing ID → Prometheus → Handler
+```
+
+### 9.1 Verifikasi Tracing ID
+
+Setiap request otomatis mendapat UUID unik. Verifikasi dengan melihat log saat load test berjalan:
+
+```bash
+docker logs capstone-auth-service-1 --tail 20
+```
+
+Anda akan melihat:
+```
+[TRACE:d6835318-607a-4c85-a4ee-86c52a0a3c7e] → /auth.AuthService/Login
+[TRACE:d6835318-607a-4c85-a4ee-86c52a0a3c7e] ✓ /auth.AuthService/Login [7.73ms]
+[TRACE:9f71ed40-c612-4c6f-975a-85882797f708] → /auth.AuthService/Login
+[TRACE:9f71ed40-c612-4c6f-975a-85882797f708] ✓ /auth.AuthService/Login [2.08ms]
+```
+
+### 9.2 Verifikasi Rate Limiter
+
+Rate limiter aktif otomatis. Terlihat di log startup setiap service:
+```
+Auth Service (gRPC) berjalan di port 9001 [Rate Limit: 1000 req/min]
+Balance Service (gRPC) berjalan di port 9002 [Rate Limit: 2000 req/min]
+Transaction Service (gRPC) berjalan di port 9003 [Rate Limit: 500 req/min]
+```
+
+### 9.3 Memicu Circuit Breaker (Simulasi Kegagalan Database)
+
+Circuit breaker akan terpicu secara otomatis saat backend database tidak tersedia. Untuk mensimulasikan skenario ini:
+
+```bash
+# Terminal 1: Jalankan load test
+docker-compose --profile testing run --rm k6-loadtester run /scripts/load_test_combined2.js
+
+# Terminal 2: Saat load test berjalan (~30 detik), matikan SELURUH database
+docker-compose stop pgbouncer-master pgbouncer-replica postgres-master postgres-replica
+
+# Terminal 2: Tunggu ~15 detik, lalu cek log
+docker logs capstone-auth-service-1 --tail 30
+```
+
+Anda akan melihat:
+```
+[TRACE:xxx] ✗ /auth.AuthService/Login (error: database error: ...) [3.001s]
+[CIRCUIT BREAKER] cb-auth-service: Closed → Open
+[TRACE:yyy] ✗ /auth.AuthService/Login (error: Service auth-service sedang tidak tersedia ...) [0ms]
+```
+
+Di **Grafana**, panel "Circuit Breaker State" akan berubah dari **hijau (0)** ke **merah (2)**.
+
+```bash
+# JANGAN LUPA nyalakan kembali database! (urutan penting)
+docker-compose start postgres-master postgres-replica pgbouncer-master pgbouncer-replica
+```
+
+> ⚠️ Setelah database menyala kembali, circuit breaker akan otomatis beralih ke Half-Open → Closed.
+
+---
+
+## 10. 🛑 Menghentikan Sistem
 
 ```bash
 # Matikan semua container (data tetap tersimpan di volume)
@@ -332,7 +412,7 @@ docker-compose down -v
 
 ---
 
-## 10. 🔧 Troubleshooting
+## 11. 🔧 Troubleshooting
 
 ### Masalah Umum & Solusi
 
@@ -361,7 +441,7 @@ Pastikan port-port berikut **tidak digunakan** oleh aplikasi lain di komputer An
 
 ---
 
-## 11. 🏛️ Arsitektur Sistem
+## 12. 🏛️ Arsitektur Sistem
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -407,13 +487,18 @@ Pastikan port-port berikut **tidak digunakan** oleh aplikasi lain di komputer An
 
 ### Alur Data
 
-1. **Client → HAProxy:** Request gRPC masuk dan didistribusikan ke replika service.
-2. **Service → Redis:** Operasi baca (Login, Saldo) dicek di cache terlebih dahulu.
-3. **Service → PgBouncer → PostgreSQL:** Jika cache kosong, query diteruskan ke database.
-4. **Service → Kafka:** Operasi tulis (Transfer) dipublikasikan sebagai event asinkron.
-5. **Worker → PostgreSQL:** Worker mengonsumsi event dari Kafka dan menulis ke database.
-6. **Prometheus → Service:** Metrics discrape setiap 15 detik dari port 2112.
-7. **Grafana → Prometheus:** Dashboard memvisualisasikan metrics secara real-time.
+1. **Client → HAProxy:** Request gRPC masuk dan didistribusikan ke replika service via L4 TCP load balancing.
+2. **Interceptor Chain:** Setiap request melewati 4 lapisan interceptor sebelum sampai ke handler:
+   - **Rate Limiter** — Cek kuota per IP via Redis sliding window.
+   - **Circuit Breaker** — Cek status sirkuit (Closed/Open/Half-Open).
+   - **Tracing ID** — Generate UUID unik dan log masuk/keluar.
+   - **Prometheus** — Catat metrik latency dan counter.
+3. **Service → Redis:** Operasi baca (Login, Saldo) dicek di cache terlebih dahulu.
+4. **Service → PgBouncer → PostgreSQL:** Jika cache kosong, query diteruskan ke database (timeout 3 detik).
+5. **Service → Kafka:** Operasi tulis (Transfer) dipublikasikan sebagai event asinkron.
+6. **Worker → PostgreSQL:** Worker mengonsumsi event dari Kafka dan menulis ke database.
+7. **Prometheus → Service:** Metrics (termasuk Circuit Breaker state) discrape setiap 15 detik dari port 2112.
+8. **Grafana → Prometheus:** Dashboard memvisualisasikan metrics secara real-time.
 
 ---
 

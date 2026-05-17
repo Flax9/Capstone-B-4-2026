@@ -10,6 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 	"gorm.io/plugin/dbresolver"
 )
 
@@ -32,7 +33,9 @@ func ConnectDatabase() {
 	replicaDSN := fmt.Sprintf("host=%s user=user password=password dbname=capstonev2 port=%s sslmode=disable", replicaHost, replicaPort)
 
 	var err error
-	DB, err = gorm.Open(postgres.Open(masterDSN), &gorm.Config{})
+	DB, err = gorm.Open(postgres.Open(masterDSN), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	if err != nil {
 		log.Fatal("[transaction-service] Gagal menyambung ke Master via PgBouncer: ", err)
 	}

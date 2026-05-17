@@ -84,6 +84,24 @@ docker-compose --profile testing run --rm k6-loadtester run /scripts/load_test_c
 
 ---
 
+## ✅ Status Pemenuhan Kriteria (Topik B.4)
+
+| Kategori | Kriteria / Kebutuhan | Status | Implementasi di Proyek |
+|---|---|---|---|
+| **Skenario Sistem** | Create transaction (write-heavy) | ✅ Selesai | Endpoint gRPC `TransactionService/Transfer` |
+| **Skenario Sistem** | User profile/balance inquiry (read-heavy) | ✅ Selesai | Endpoint gRPC `BalanceService/CheckBalance` |
+| **Komponen Prototype** | API service (load-testable) | ✅ Selesai | 3 gRPC Microservices (Auth, Balance, Transaction) + HAProxy |
+| **Komponen Prototype** | Database (PostgreSQL/MySQL) + dummy data | ✅ Selesai | PostgreSQL Master-Replica + PgBouncer, init script SQL |
+| **Komponen Prototype** | Caching layer (Redis) untuk read-heavy | ✅ Selesai | Redis Cache-Aside di Balance & Auth Service |
+| **Komponen Prototype** | Message queue untuk write path (async) | ✅ Selesai | Apache Kafka terintegrasi di Transaction Service & Worker |
+| **Proteksi Peak Load** | Rate limiting (API gateway/middleware) | ✅ Selesai | Redis Sliding Window Interceptor & Fiber limiter |
+| **Proteksi Peak Load** | Circuit breaker | ✅ Selesai | Interceptor gRPC menggunakan `sony/gobreaker` |
+| **Proteksi Peak Load** | Backpressure / queue buffering | ✅ Selesai | Pekerja *background* Kafka (*batch-processing*) |
+| **Komponen Prototype** | Load testing (p50/p95/p99, TPS, error rate)| ✅ Selesai | Skrip K6 berjalan di dalam container + report via InfluxDB |
+| **Komponen Prototype** | Observability (metrics, logs, tracing ID) | ✅ Selesai | Prometheus + Grafana, custom R.E.D Metrics & UUID Tracing |
+
+---
+
 ## 🔧 Teknologi yang Digunakan
 
 | Kategori | Teknologi | Fungsi |
