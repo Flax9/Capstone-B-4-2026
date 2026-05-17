@@ -6,6 +6,7 @@ use (
 	./backend-api
 	./balance-service
 	./proto
+	./shared
 	./transaction-service
 	./transaction-worker
 )

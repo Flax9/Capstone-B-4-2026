@@ -2,6 +2,7 @@ FROM golang:1.26-alpine AS builder
 WORKDIR /app
 ENV GOWORK=off
 COPY proto ./proto/
+COPY shared ./shared/
 COPY transaction-service ./transaction-service/
 WORKDIR /app/transaction-service
 RUN go mod download

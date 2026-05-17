@@ -2,6 +2,7 @@ FROM golang:1.26-alpine AS builder
 WORKDIR /app
 ENV GOWORK=off
 COPY proto ./proto/
+COPY shared ./shared/
 COPY balance-service ./balance-service/
 WORKDIR /app/balance-service
 RUN go mod download

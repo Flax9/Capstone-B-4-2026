@@ -5,10 +5,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 	"transaction-service/config"
 	"transaction-service/handlers"
 
 	pb "capstone/proto/transaction"
+	"shared/interceptors"
+
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
@@ -17,6 +20,7 @@ import (
 func main() {
 	config.ConnectDatabase()
 	config.ConnectKafka()
+	config.ConnectRedis()
 
 	// 1. Jalankan Prometheus Metrics Server (Background)
 	go func() {
@@ -37,9 +41,14 @@ func main() {
 		log.Fatalf("Gagal membuka port %s: %v", port, err)
 	}
 
-	// 2. Tambahkan Interceptor Prometheus
+	// 2. gRPC Server dengan Chain Interceptor: RateLimit → CircuitBreaker → Tracing → Prometheus
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+		grpc.ChainUnaryInterceptor(
+			interceptors.RateLimitInterceptor(config.RedisClient, 500, 1*time.Minute),
+			interceptors.CircuitBreakerInterceptor("transaction-service"),
+			interceptors.TracingInterceptor(),
+			grpc_prometheus.UnaryServerInterceptor,
+		),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 	)
 
@@ -49,7 +58,7 @@ func main() {
 	grpc_prometheus.EnableHandlingTimeHistogram()
 	grpc_prometheus.Register(grpcServer)
 
-	log.Printf("Transaction Service (gRPC) berjalan di port %s", port)
+	log.Printf("Transaction Service (gRPC) berjalan di port %s [Rate Limit: 500 req/min]", port)
 	if err := grpcServer.Serve(listener); err != nil {
 		log.Fatalf("Gagal menjalankan server gRPC: %v", err)
 	}

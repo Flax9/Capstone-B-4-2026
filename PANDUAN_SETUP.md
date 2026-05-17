@@ -83,6 +83,11 @@ capstone-grpc/
 │   ├── load_test_login.js       # Load test khusus login
 │   ├── load_test_cek_saldo.js   # Load test khusus cek saldo
 │   └── load_test_transfer.js    # Load test khusus transfer
+├── shared/                 # Shared gRPC Interceptors
+│   └── interceptors/
+│       ├── ratelimit.go         # Rate Limiter (Redis sliding window)
+│       ├── circuitbreaker.go    # Circuit Breaker (sony/gobreaker)
+│       └── tracing.go           # Tracing ID (UUID per request)
 ├── database-init/          # SQL inisialisasi database
 │   └── 01-init.sql
 ├── docker-compose.yml      # Orkestrasi seluruh infrastruktur

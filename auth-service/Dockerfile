@@ -2,6 +2,7 @@ FROM golang:1.26-alpine AS builder
 WORKDIR /app
 ENV GOWORK=off
 COPY proto ./proto/
+COPY shared ./shared/
 COPY auth-service ./auth-service/
 WORKDIR /app/auth-service
 RUN go mod download
