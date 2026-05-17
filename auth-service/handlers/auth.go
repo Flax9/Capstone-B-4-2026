@@ -3,40 +3,63 @@ package handlers
 import (
 	"auth-service/config"
 	"auth-service/models"
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	pb "capstone/proto/auth"
+
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/segmentio/kafka-go"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 )
 
-type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+type AuthServer struct {
+	pb.UnimplementedAuthServiceServer
 }
 
-func Login(c *fiber.Ctx) error {
-	var req LoginRequest
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid Payload format"})
-	}
-
+func (s *AuthServer) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
 	var user models.User
 	var actionEvent string
-	var resStatus int
-	var payload fiber.Map
+	var resStatus int32
+	var message string
+	var tokenString string
+	var userFullname string
 	var details map[string]interface{}
+	var userFound bool
 
-	// BACA KE REPLICA (Cepat)
-	err := config.DB.Where("username = ?", req.Username).First(&user).Error
+	// 1. CEK REDIS CACHE DULU (Cache-Aside Pattern)
+	cacheKey := fmt.Sprintf("user:login:%s", req.Username)
+	cachedData, err := config.RedisClient.Get(ctx, cacheKey).Result()
+	if err == nil && cachedData != "" {
+		// Cache HIT — tidak perlu query SQL
+		_ = json.Unmarshal([]byte(cachedData), &user)
+		userFound = true
+	} else if err != redis.Nil {
+		fmt.Printf("[auth-service] Redis Get Error: %v\n", err)
+	}
 
-	if err != nil {
+	// 2. CACHE MISS => Query ke Replica PostgreSQL
+	if !userFound {
+		dbErr := config.DB.WithContext(ctx).Where("username = ?", req.Username).First(&user).Error
+		if dbErr != nil {
+			userFound = false
+		} else {
+			userFound = true
+			// 3. Populate Cache (TTL 60 detik)
+			userJSON, _ := json.Marshal(user)
+			_ = config.RedisClient.Set(ctx, cacheKey, userJSON, 60*time.Second).Err()
+		}
+	}
+
+	if !userFound {
 		actionEvent = "LOGIN_FAILED_NOTFOUND"
 		resStatus = 401
-		payload = fiber.Map{"error": "Identitas gagal divalidasi"}
+		message = "Identitas gagal divalidasi"
 		details = map[string]interface{}{"reason": "user_missing_or_typo"}
 	} else {
 		claims := jwt.MapClaims{
@@ -54,36 +77,54 @@ func Login(c *fiber.Ctx) error {
 
 		signedToken, errSigning := token.SignedString([]byte(secretKey))
 		if errSigning != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Gagal menenun tanda tangan kriptografi JWT"})
+			return &pb.LoginResponse{
+				StatusCode: 500,
+				Message:    "Gagal menenun tanda tangan kriptografi JWT",
+			}, nil
 		}
 
 		actionEvent = "LOGIN_SUCCESS"
 		resStatus = 200
-		payload = fiber.Map{
-			"message": "Auth Berhasil Disetujui",
-			"token":   signedToken,
-			"user":    user.FullName,
-		}
+		message = "Auth Berhasil Disetujui"
+		tokenString = signedToken
+		userFullname = user.FullName
 		details = map[string]interface{}{"auth_method": "password_verification"}
 	}
 
-	// KIRIM AUDIT LOG KE KAFKA (Non-blocking, Tanpa menyentuh DB)
+	// Extract IP and User-Agent from gRPC Metadata
+	var ipAddress string
+	var userAgent string
+	if p, ok := peer.FromContext(ctx); ok {
+		ipAddress = p.Addr.String()
+	}
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if agents := md.Get("user-agent"); len(agents) > 0 {
+			userAgent = agents[0]
+		}
+	}
+
+	// KIRIM AUDIT LOG KE KAFKA
 	detailsJSON, _ := json.Marshal(details)
 	auditMessage := map[string]interface{}{
 		"action":     actionEvent,
 		"user_id":    user.UserID,
-		"ip_address": c.IP(),
-		"user_agent": c.Get("User-Agent"),
+		"ip_address": ipAddress,
+		"user_agent": userAgent,
 		"details":    string(detailsJSON),
 		"created_at": time.Now().Format(time.RFC3339),
 	}
 	messageBytes, _ := json.Marshal(auditMessage)
 
 	// Async write to Kafka
-	config.KafkaWriter.WriteMessages(c.Context(), kafka.Message{
-		Key:   []byte(user.Username),
+	config.KafkaWriter.WriteMessages(context.Background(), kafka.Message{
+		Key:   []byte(req.Username),
 		Value: messageBytes,
 	})
 
-	return c.Status(resStatus).JSON(payload)
+	return &pb.LoginResponse{
+		StatusCode:    resStatus,
+		Message:       message,
+		Token:         tokenString,
+		UserFullname:  userFullname,
+	}, nil
 }

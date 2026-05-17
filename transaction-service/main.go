@@ -2,47 +2,55 @@ package main
 
 import (
 	"log"
-	"time"
-
+	"net"
+	"net/http"
+	"os"
 	"transaction-service/config"
 	"transaction-service/handlers"
-	"transaction-service/middlewares"
 
-	"github.com/ansrivas/fiberprometheus/v2"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
-	"github.com/gofiber/fiber/v2/middleware/logger"
+	pb "capstone/proto/transaction"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
 )
 
 func main() {
 	config.ConnectDatabase()
-	config.ConnectRedis()
 	config.ConnectKafka()
 
-	app := fiber.New(fiber.Config{
-		AppName: "Transaction Service - Banking Capstone",
-		Prefork: true,
-	})
+	// 1. Jalankan Prometheus Metrics Server (Background)
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		log.Printf("Prometheus metrics tersedia di :2112/metrics")
+		if err := http.ListenAndServe(":2112", nil); err != nil {
+			log.Printf("Gagal menjalankan metrics server: %v", err)
+		}
+	}()
 
-	prometheus := fiberprometheus.New("transaction-service")
-	prometheus.RegisterAt(app, "/metrics")
-	app.Use(prometheus.Middleware)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "9003"
+	}
 
-	app.Use(logger.New(logger.Config{
-		Format:     "[txn-svc] [${time}] ${status} - ${latency} | ${method} ${path}\n",
-		TimeFormat: "15:04:05",
-	}))
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatalf("Gagal membuka port %s: %v", port, err)
+	}
 
-	api := app.Group("/api")
-	api.Use(middlewares.Protected())
-	api.Post("/transactions/transfer", handlers.Transfer)
+	// 2. Tambahkan Interceptor Prometheus
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+	)
 
-	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.SendString("transaction-service: OK")
-	})
+	pb.RegisterTransactionServiceServer(grpcServer, &handlers.TransactionServer{})
 
-	log.Println("[transaction-service] Menyala di port :9003 💸")
-	if err := app.Listen(":9003"); err != nil {
-		log.Fatalf("[transaction-service] Error: %v", err)
+	// Register all services to Prometheus
+	grpc_prometheus.EnableHandlingTimeHistogram()
+	grpc_prometheus.Register(grpcServer)
+
+	log.Printf("Transaction Service (gRPC) berjalan di port %s", port)
+	if err := grpcServer.Serve(listener); err != nil {
+		log.Fatalf("Gagal menjalankan server gRPC: %v", err)
 	}
 }

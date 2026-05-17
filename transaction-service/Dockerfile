@@ -1,15 +1,14 @@
 FROM golang:1.26-alpine AS builder
 WORKDIR /app
-COPY go.mod go.sum ./
-# Download semua deps termasuk indirect
-RUN go mod download all
-COPY . .
-# Gunakan GONOSUMCHECK agar tidak membutuhkan go.sum yang sempurna
-ENV GONOSUMCHECK=*
+ENV GOWORK=off
+COPY proto ./proto/
+COPY transaction-service ./transaction-service/
+WORKDIR /app/transaction-service
+RUN go mod download
 RUN go build -o server main.go
 
 FROM alpine:latest
 WORKDIR /app
-COPY --from=builder /app/server .
+COPY --from=builder /app/transaction-service/server .
 EXPOSE 9003
 CMD ["./server"]

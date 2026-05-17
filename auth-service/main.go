@@ -1,45 +1,57 @@
 package main
 
 import (
-	"log"
-	"time"
-
 	"auth-service/config"
 	"auth-service/handlers"
+	"log"
+	"net"
+	"net/http"
+	"os"
 
-	"github.com/ansrivas/fiberprometheus/v2"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
-	"github.com/gofiber/fiber/v2/middleware/logger"
+	pb "capstone/proto/auth"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
 )
 
 func main() {
 	config.ConnectDatabase()
 	config.ConnectKafka()
+	config.ConnectRedis()
 
-	app := fiber.New(fiber.Config{
-		AppName: "Auth Service - Banking Capstone",
-		Prefork: true, // Membagi beban ke semua core CPU secara efisien
-	})
+	// 1. Jalankan Prometheus Metrics Server (Background)
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		log.Printf("Prometheus metrics tersedia di :2112/metrics")
+		if err := http.ListenAndServe(":2112", nil); err != nil {
+			log.Printf("Gagal menjalankan metrics server: %v", err)
+		}
+	}()
 
-	prometheus := fiberprometheus.New("auth-service")
-	prometheus.RegisterAt(app, "/metrics")
-	app.Use(prometheus.Middleware)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "9001"
+	}
 
-	app.Use(logger.New(logger.Config{
-		Format:     "[auth-svc] [${time}] ${status} - ${latency} | ${method} ${path}\n",
-		TimeFormat: "15:04:05",
-	}))
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatalf("Gagal membuka port %s: %v", port, err)
+	}
 
-	api := app.Group("/api")
-	api.Post("/auth/login", handlers.Login)
+	// 2. Tambahkan Interceptor Prometheus
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+	)
 
-	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.SendString("auth-service: OK")
-	})
+	pb.RegisterAuthServiceServer(grpcServer, &handlers.AuthServer{})
 
-	log.Println("[auth-service] Menyala di port :9001 🔑")
-	if err := app.Listen(":9001"); err != nil {
-		log.Fatalf("[auth-service] Error: %v", err)
+	// Register all services to Prometheus
+	grpc_prometheus.EnableHandlingTimeHistogram()
+	grpc_prometheus.Register(grpcServer)
+
+	log.Printf("Auth Service (gRPC) berjalan di port %s", port)
+	if err := grpcServer.Serve(listener); err != nil {
+		log.Fatalf("Gagal menjalankan server gRPC: %v", err)
 	}
 }

@@ -167,14 +167,16 @@ services:
   # ============================================================
   auth-service:
     build:
-      context: ./auth-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./auth-service/Dockerfile
     environment:
       - DB_MASTER_HOST=pgbouncer-master
       - DB_MASTER_PORT=6432
       - DB_REPLICA_HOST=pgbouncer-replica
       - DB_REPLICA_PORT=6432
       - KAFKA_BROKER=kafka:9092
+      - REDIS_HOST=redis-cache
+      - REDIS_PORT=6379
     networks:
       - api-net
       - data-net
@@ -184,6 +186,8 @@ services:
       pgbouncer-replica:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      redis-cache:
         condition: service_healthy
     deploy:
       replicas: 2
@@ -198,8 +202,8 @@ services:
   # ============================================================
   audit-worker:
     build:
-      context: ./audit-worker
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./audit-worker/Dockerfile
     environment:
       - DB_MASTER_HOST=pgbouncer-master
       - DB_MASTER_PORT=6432
@@ -219,8 +223,8 @@ services:
   # ============================================================
   balance-service:
     build:
-      context: ./balance-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./balance-service/Dockerfile
     environment:
       - DB_MASTER_HOST=pgbouncer-master
       - DB_MASTER_PORT=6432
@@ -251,8 +255,8 @@ services:
   # ============================================================
   transaction-service:
     build:
-      context: ./transaction-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./transaction-service/Dockerfile
     environment:
       - DB_MASTER_HOST=pgbouncer-master
       - DB_MASTER_PORT=6432
@@ -286,8 +290,8 @@ services:
   # ============================================================
   transaction-worker:
     build:
-      context: ./transaction-worker
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./transaction-worker/Dockerfile
     environment:
       - DB_MASTER_HOST=pgbouncer-master
       - DB_MASTER_PORT=6432
@@ -313,20 +317,26 @@ services:
           memory: 512M # Naik dari 256M
     logging: *default-logging
 
-  envoy:
-    image: envoyproxy/envoy:v1.27-latest
+  haproxy:
+    image: haproxy:latest
     ports:
-      - "9000:8080"
-      - "9901:9901"
+      - "9001:9001"
+      - "9002:9002"
+      - "9003:9003"
     volumes:
-      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     networks:
-      - api-net
+      api-net:
+        ipv4_address: 172.25.0.100
     depends_on:
       - auth-service
       - balance-service
       - transaction-service
-
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
     logging: *default-logging
 
   prometheus:
@@ -338,6 +348,11 @@ services:
       - prometheus_data:/prometheus
     networks:
       - api-net
+      - data-net
+    depends_on:
+      - auth-service
+      - balance-service
+      - transaction-service
     logging: *default-logging
 
   grafana:
@@ -348,6 +363,8 @@ services:
       - grafana_data:/var/lib/grafana
     networks:
       - api-net
+    depends_on:
+      - prometheus
     logging: *default-logging
 
   k6-loadtester:
@@ -355,10 +372,15 @@ services:
     # Profile "testing" memastikan container ini hanya jalan jika dipanggil spesifik, 
     # contoh: docker-compose --profile testing up k6-loadtester
     profiles: ["testing"]
+    entrypoint: ["sh", "-c", "echo 'Menunggu jaringan stabil (5 detik)...' && sleep 5 && k6 \"$$@\"", "--"]
     volumes:
       - ./k6-scripts:/scripts
+      - ./proto:/proto
     networks:
-      - api-net
+      api-net:
+        ipv4_address: 172.25.0.200
+    environment:
+      - TARGET_HOST=172.25.0.100
     logging: *default-logging
 
   influxdb:
@@ -374,6 +396,9 @@ services:
 networks:
   api-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
   data-net:
     driver: bridge
 

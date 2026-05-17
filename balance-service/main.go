@@ -1,47 +1,56 @@
 package main
 
 import (
-	"log"
-	"time"
-
 	"balance-service/config"
 	"balance-service/handlers"
-	"balance-service/middlewares"
+	"log"
+	"net"
+	"net/http"
+	"os"
 
-	"github.com/ansrivas/fiberprometheus/v2"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
-	"github.com/gofiber/fiber/v2/middleware/logger"
+	pb "capstone/proto/balance"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
 )
 
 func main() {
 	config.ConnectDatabase()
 	config.ConnectRedis()
 
-	app := fiber.New(fiber.Config{
-		AppName: "Balance Service - Banking Capstone",
-		Prefork: true,
-	})
+	// 1. Jalankan Prometheus Metrics Server (Background)
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		log.Printf("Prometheus metrics tersedia di :2112/metrics")
+		if err := http.ListenAndServe(":2112", nil); err != nil {
+			log.Printf("Gagal menjalankan metrics server: %v", err)
+		}
+	}()
 
-	prometheus := fiberprometheus.New("balance-service")
-	prometheus.RegisterAt(app, "/metrics")
-	app.Use(prometheus.Middleware)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "9002"
+	}
 
-	app.Use(logger.New(logger.Config{
-		Format:     "[balance-svc] [${time}] ${status} - ${latency} | ${method} ${path}\n",
-		TimeFormat: "15:04:05",
-	}))
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatalf("Gagal membuka port %s: %v", port, err)
+	}
 
-	api := app.Group("/api")
-	api.Use(middlewares.Protected())
-	api.Get("/accounts/:id", handlers.GetAccountBalance)
+	// 2. Tambahkan Interceptor Prometheus
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+	)
 
-	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.SendString("balance-service: OK")
-	})
+	pb.RegisterBalanceServiceServer(grpcServer, &handlers.BalanceServer{})
 
-	log.Println("[balance-service] Menyala di port :9002 💰")
-	if err := app.Listen(":9002"); err != nil {
-		log.Fatalf("[balance-service] Error: %v", err)
+	// Register all services to Prometheus
+	grpc_prometheus.EnableHandlingTimeHistogram()
+	grpc_prometheus.Register(grpcServer)
+
+	log.Printf("Balance Service (gRPC) berjalan di port %s", port)
+	if err := grpcServer.Serve(listener); err != nil {
+		log.Fatalf("Gagal menjalankan server gRPC: %v", err)
 	}
 }

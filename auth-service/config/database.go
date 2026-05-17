@@ -1,17 +1,21 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/plugin/dbresolver"
 )
 
 var DB *gorm.DB
+var RedisClient *redis.Client
+var Ctx = context.Background()
 
 func ConnectDatabase() {
 	masterHost := os.Getenv("DB_MASTER_HOST")
@@ -51,4 +55,19 @@ func ConnectDatabase() {
 		log.Fatal("[auth-service] Gagal memasang DBResolver: ", err)
 	}
 	log.Println("[auth-service] Terhubung ke PostgreSQL via PgBouncer!")
+}
+
+func ConnectRedis() {
+	redisHost := os.Getenv("REDIS_HOST")
+	if redisHost == "" { redisHost = "127.0.0.1" }
+	redisPort := os.Getenv("REDIS_PORT")
+	if redisPort == "" { redisPort = "6379" }
+
+	RedisClient = redis.NewClient(&redis.Options{
+		Addr: fmt.Sprintf("%s:%s", redisHost, redisPort),
+	})
+	if err := RedisClient.Ping(Ctx).Err(); err != nil {
+		log.Fatal("[auth-service] Gagal menyambung ke Redis: ", err)
+	}
+	log.Println("[auth-service] Terhubung ke Redis!")
 }

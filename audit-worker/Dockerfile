@@ -1,12 +1,13 @@
 FROM golang:1.26-alpine AS builder
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download all
-COPY . .
-ENV GONOSUMCHECK=*
-RUN go build -o worker main.go
+ENV GOWORK=off
+COPY proto ./proto/
+COPY audit-worker ./audit-worker/
+WORKDIR /app/audit-worker
+RUN go mod download
+RUN go build -o server main.go
 
 FROM alpine:latest
 WORKDIR /app
-COPY --from=builder /app/worker .
-CMD ["./worker"]
+COPY --from=builder /app/audit-worker/server .
+CMD ["./server"]

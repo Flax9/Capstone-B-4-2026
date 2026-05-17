@@ -7,27 +7,13 @@ scrape_configs:
       - targets: ['localhost:9090']
 
   - job_name: 'auth-service'
-    metrics_path: '/metrics'
-    dns_sd_configs:
-      - names: ['auth-service']
-        type: A
-        port: 9001
+    static_configs:
+      - targets: ['auth-service:2112']
 
   - job_name: 'balance-service'
-    metrics_path: '/metrics'
-    dns_sd_configs:
-      - names: ['balance-service']
-        type: A
-        port: 9002
+    static_configs:
+      - targets: ['balance-service:2112']
 
   - job_name: 'transaction-service'
-    metrics_path: '/metrics'
-    dns_sd_configs:
-      - names: ['transaction-service']
-        type: A
-        port: 9003
-
-  - job_name: 'envoy'
-    metrics_path: '/stats/prometheus'
     static_configs:
-      - targets: ['envoy:9901']
+      - targets: ['transaction-service:2112']

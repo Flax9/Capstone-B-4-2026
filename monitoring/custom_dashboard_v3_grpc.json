@@ -1,0 +1,157 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "type": "row",
+      "title": "🔴 R.E.D Metrics (gRPC Core Performance)"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "id": 1,
+      "title": "Throughput (Rate) / RPS",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(grpc_server_handled_total[1m]))",
+          "legendFormat": "Requests per second"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "id": 2,
+      "title": "Error Rate (Non-OK gRPC Codes)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(grpc_server_handled_total{grpc_code!=\"OK\"}[1m]))",
+          "legendFormat": "Errors per second"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "id": 3,
+      "title": "Latency P95 (Duration)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket[1m])) by (le))",
+          "legendFormat": "P95 Latency (s)"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 9 },
+      "id": 102,
+      "type": "row",
+      "title": "⚖️ gRPC Service Traffic Distribution"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 10 },
+      "id": 6,
+      "title": "Requests per Second by Service",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (job) (rate(grpc_server_handled_total[1m]))",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 18 },
+      "id": 101,
+      "type": "row",
+      "title": "⚙️ Golang Runtime & Infrastructure"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "id": 4,
+      "title": "Golang Active Goroutines",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "go_goroutines",
+          "legendFormat": "Goroutines"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+      "id": 5,
+      "title": "Golang Heap Memory Allocated",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "go_memstats_alloc_bytes",
+          "legendFormat": "Bytes Allocated"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" },
+        "hide": 0,
+        "name": "DS_PROMETHEUS",
+        "query": "prometheus",
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-30m", "to": "now" },
+  "title": "Banking Core Dashboard V3 (gRPC Hyper-Scale)",
+  "version": 1
+}
